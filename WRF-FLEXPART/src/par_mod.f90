@@ -123,8 +123,8 @@ module par_mod
   !*********************************************
 
   !integer,parameter :: nxmax=364,nymax=244,nuvzmax=45,nwzmax=45,nzmax=45
-  !integer,parameter :: nxmax=454,nymax=334,nuvzmax=45,nwzmax=45,nzmax=45
-  integer,parameter :: nxmax=301,nymax=187,nuvzmax=46,nwzmax=46,nzmax=46
+  integer,parameter :: nxmax=454,nymax=334,nuvzmax=45,nwzmax=45,nzmax=45
+  !integer,parameter :: nxmax=301,nymax=187,nuvzmax=46,nwzmax=46,nzmax=46
   !integer,parameter :: nxmax=182,nymax=182,nuvzmax=61,nwzmax=61,nzmax=61
   !integer,parameter :: nxmax=1081,nymax=260,nuvzmax=89,nwzmax=89,nzmax=89
 

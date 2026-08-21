@@ -76,7 +76,13 @@
   integer :: igr,igrold, ipart, itime, ix, j, inest
   integer :: ipconv
   integer :: jy, kpart, ktop, ngrid,kz,kzp,a
-  integer :: igrid(maxpart), ipoint(maxpart), igridn(maxpart,maxnests)
+! ROIHU: these were automatic (stack) arrays. At 28 bytes per particle plus the
+! 4 MB sumpartgrid below, a large maxpart overflows the stack and segfaults on
+! entry to this routine. convmix.f90 already allocates them on the heap; do the
+! same here. SAVEd so the allocation happens only on the first call.
+  integer,allocatable,save,dimension(:)   :: igrid,ipoint,numberp,sumpartgrid
+  integer,allocatable,save,dimension(:,:) :: igridn
+  integer :: ngridmax
   ! itime [s]                 current time
   ! igrid(maxpart)            horizontal grid position of each particle
   ! igridn(maxpart,maxnests)  dto. for nested grids
@@ -91,7 +97,7 @@
   integer :: itage,nage,duminc
   real,parameter :: eps=nxmax/3.e5
 
-      integer :: i,k,numberp(maxpart)
+      integer :: i,k
 !-- for KFeta
       real, dimension(nuvzmax):: u1d,v1d,t1d,dz1d,qv1d,p1d, &
                                     rho1d,w0avg1d,umf,uer,udr, &
@@ -103,7 +109,6 @@
 
 !     monitoring variables
        real :: sumconv,sumall,sumpart
-       integer :: sumpartgrid(1000000)
 
 !      print *, "IN convmix_kfeta"
 !      write(*,'(//a,a//)')
@@ -145,6 +150,16 @@
 !********************************************************
 
       if (numpart.le.0) return
+
+! Heap allocation, done once. igrid runs from 1 to at most nx*ny+nx+1 (see the
+! ix=nint(x) assignment below, which can round up to nx at the domain edge), so
+! size sumpartgrid from the grid rather than the old hard-wired 1000000.
+      ngridmax = nx*(ny+1) + 1
+      if (.not.allocated(igrid)) then
+        allocate(igrid(maxpart),ipoint(maxpart),numberp(maxpart))
+        allocate(igridn(maxpart,max(1,maxnests)))
+        allocate(sumpartgrid(ngridmax))
+      endif
 
 ! Assign igrid and igridn, which are pseudo grid numbers indicating particles
 ! that are outside the part of the grid under consideration
@@ -229,13 +244,12 @@
 !42        if(igrid(k) .eq. i) numberp(k)=int(sumpart)  
 !40     continue
 ! JB
-         if (maxval(igrid).gt.1000000) then
-         print*,'too much x and y grid. modify convmix_kfeta.f'
+         if (maxval(igrid).gt.ngridmax) then
+         print*,'too much x and y grid. modify convmix_kfeta.f', &
+                maxval(igrid),ngridmax
          stop
          endif
-        do k=1,1000000
-        sumpartgrid(k)=0
-        enddo
+        sumpartgrid(:)=0
         do k=1,numpart
         if (igrid(k).gt.0) sumpartgrid(igrid(k))=sumpartgrid(igrid(k))+1
         enddo
@@ -256,9 +270,15 @@
       a=0
       do kpart=1,numpart
         igr = igrid(kpart)
+! ROIHU: was 'goto 50', but label 50 sits AFTER the enddo below, so this exited
+! the whole particle loop instead of skipping this one particle. Upstream
+! FLEXPART (convmix.f90, label 50) places the label inside the loop, i.e. a
+! cycle. As written, the first out-of-domain particle -- and sort2 puts those
+! first, since igrid=-1 sorts lowest -- switched off mother-domain convection
+! for the remainder of the timestep.
         if (igr .eq. -1 .or. numberp(kpart).le.20 &
 !       if (igr .eq. -1 
-      ) goto 50
+      ) cycle
         ipart = ipoint(kpart)
 
 !       sumall = sumall + 1
@@ -444,7 +464,6 @@
 
         endif   !(lconv .eqv. .true)
        enddo
- 50     continue
 
 !        write(*,*)'total convective columns=',sumconv,
 !    &             'time=', 1.0*itime/3600 
@@ -457,7 +476,10 @@
 
       do inest=1,numbnests
         delx = dxn(inest)
-        if (delx .le. 10000.0) goto 70        ! for small grid size, no need to do convection 
+! ROIHU: 'goto 70' left the inest loop entirely; the comment says this nest.
+! Same f77->f90 label-placement artefact as 50/60 below. (Behaviour only differs
+! if dxn is not monotonically decreasing with nest index.)
+        if (delx .le. 10000.0) cycle          ! for small grid size, no need to do convection 
         do ipart=1,numpart
           ipoint(ipart)=ipart
           igrid(ipart) = igridn(ipart,inest)
@@ -471,7 +493,7 @@
         igrold = -1
         do kpart=1,numpart
           igr = igrid(kpart)
-          if (igr .eq. -1) goto 60
+          if (igr .eq. -1) cycle    ! ROIHU: was 'goto 60' -- see label-50 note
           ipart = ipoint(kpart)
 !         sumall = sumall + 1
           if (igr .ne. igrold) then
@@ -608,9 +630,7 @@
           endif !(lconv .eqv. .true.)
 
        enddo
- 60       continue
-        enddo
- 70     continue    !inest - loop
+        enddo       !inest - loop
 !       print*,'end of convmix'
 !--------------------------------------------------------------------------
 !     write(*,*)'############################################'

@@ -36,6 +36,9 @@ subroutine redist (ipart,ktop,ipconv)
   use par_mod
   use com_mod
   use conv_mod
+! ran3() needs its full generator state (idummy,inext,inextp,ma,iff), held in
+! ran_mod's /random/ common block. See the note in redist_kf.f90.
+  use ran_mod
 
   implicit none
 
@@ -48,9 +51,9 @@ subroutine redist (ipart,ktop,ipconv)
   real :: temp_levold,temp_levold1
   real :: sub_levold,sub_levold1
   real :: pint, pold, rn, tv, tvold, dlevfrac
-  real :: ew,ran3, ztold,ffraction
+  real :: ew, ztold,ffraction
+  real, external :: ran3
   real :: tv1, tv2, dlogp, dz, dz1, dz2
-  integer :: iseed = -88
 
   ! ipart   ... number of particle to be treated
 
@@ -139,7 +142,7 @@ subroutine redist (ipart,ktop,ipconv)
   !  Choose a random number and find corresponding level of destination
   !  Random numbers to be evenly distributed in [0,1]
 
-  rn = ran3(iseed)
+  rn = ran3(idummy,inext,inextp,ma,iff)
 
   ! initialize levnew
 

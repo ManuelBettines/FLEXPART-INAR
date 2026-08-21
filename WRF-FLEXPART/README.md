@@ -244,15 +244,6 @@ Re-run it with different options as often as you like: it rewrites, it does not 
 — eight levels below 500 m, where 20 evenly spaced ones would have given a single 350 m
 layer. That is usually what you want for a footprint run.
 
-To check one coordinate without touching any file:
-
-```bash
-./wrfgrid.py /scratch/.../wrfout/ --ll 28.309 -16.499
-# 28.309 N -16.499 E -> x = 59598.6 m, y = 45508.2 m (i = 59.60, j = 45.51, fit 0.1 m)
-```
-
-Nested output grids (`NESTED_OUTPUT`) are not generated — write those by hand.
-
 ### 4.4 Switches worth understanding
 
 | Switch | Notes |

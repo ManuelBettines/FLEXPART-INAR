@@ -62,6 +62,12 @@
                             umfzf,dmfzf,fmix,                      & ! IN
                             zp)                                      ! IN/OUT
 
+! ran3() takes its complete generator state as arguments (idummy,inext,inextp,
+! ma,iff) -- see random.f90. That state lives in ran_mod's /random/ common block,
+! which starts zeroed so the first call self-seeds (iff==0 triggers the init
+! branch). Calling ran3 with a single argument, as this file used to, left the
+! remaining four dummies bound to garbage addresses and segfaulted.
+        use ran_mod
 
         IMPLICIT NONE
         integer :: nuvzmax,nuvz,ldirect,i,j,k,kk,mix_option
@@ -71,7 +77,8 @@
         real,dimension(nuvzmax):: dmf,der,ddr,rho1d
         real,dimension(nuvzmax+1):: zf,umfzf,dmfzf
         real :: zp,delt,dx,fup,fdown,ftotal,totalmass
-        real :: rn,rn1,rn2,ddz,fde,w_sub,ran3,fmix
+        real :: rn,rn1,rn2,ddz,fde,w_sub,fmix
+        real, external :: ran3
         real :: uptop,downtop          ! top of updraft and downdraft
 !        data well_mix,prob_mix/2,3/
 
@@ -123,7 +130,7 @@
 !hmjb - there are many calls like this in this function, all with the same problem. 
 !hmjb - i did not dare trying to fix them...
 
-            rn=ran3(88)
+            rn=ran3(idummy,inext,inextp,ma,iff)
      
             if (rn .le. fmix) then       ! inside cloud 
               write(*,*)'well mixed, fmix=,rn=',fmix,rn
@@ -131,7 +138,7 @@
 !    --|X-  rn2 (particle position)
 !    --|--  umfzf(j-1),zf(j-1)
 
-               rn2=ran3(881)
+               rn2=ran3(idummy,inext,inextp,ma,iff)
 
                do j=2,nuvz+1
                  if(umfzf(j) .ge. rn2) then 
@@ -156,11 +163,11 @@
            ftotal=fup+fdown                               ! ignore downward flux if 0*fdown
            if (ftotal .le. 1e-10) goto 89                    ! return if no cloud
 ! pick a random number to see if particle is inside cloud
-            rn = ran3(88)
+            rn = ran3(idummy,inext,inextp,ma,iff)
           
 
            if (rn .le. ftotal) then    ! in
-            rn1=ran3(881)              
+            rn1=ran3(idummy,inext,inextp,ma,iff)              
              write(*,*)'inside cloud, kk,ftotal,rn=',kk,ftotal,rn
               if (rn1 .le. fup/ftotal) then   ! updraft
 ! parcel will move upward till all particles inside are detrained
@@ -176,7 +183,7 @@
                    write(*,*)'updraft','fup=',fup,uer(kk)*delt,totalmass
                    write(*,*)'fdown=',fdown,fdown/ftotal
                 do j=kk,nuvz-1 
-                 rn=ran3(882)
+                 rn=ran3(idummy,inext,inextp,ma,iff)
                  if (umf(j) .eq. 0.0) goto 98
                  fde = abs(udr(j+1)/umf(j))   ! detrainment probability at level j+1
                  if (rn .lt. fde .or. zh(j+1) .ge. uptop) goto 98 ! being detrtained from air parcel
@@ -186,8 +193,15 @@
                  write(*,*)'detrain at',j+1,rn,zp,'old=',zf(kk)
               else                            !up/down
 ! move downward till detrained or get to ground
-                do j=kk,2,-1
-                 rn=ran3(883)
+! ROIHU: was 'do j=kk,2,-1'. For a particle already in the bottom layer (kk=1,
+! i.e. zp < zf(2)) that is a zero-trip loop, j keeps the value 1, and the
+! zp=zf(j-1)+... below reads zf(0) -- one element before the array. Starting at
+! max(kk,2) is a no-op for kk>=2, and for kk=1 it runs the j=2 iteration, whose
+! 'j .eq. 2' test always branches to the label. So the particle ends up placed
+! within the bottom layer, which is what "till detrained or get to ground"
+! means for every other particle that reaches the bottom.
+                do j=max(kk,2),2,-1
+                 rn=ran3(idummy,inext,inextp,ma,iff)
                  if(dmf(j) .eq. 0.0) goto 102
                  fde = abs(ddr(j-1)/dmf(j))  ! detrainment at level j-1 
                  if(rn .lt. fde .or. j .eq. 2) goto 102
@@ -223,14 +237,14 @@
            if (ftotal .le. 1e-10) goto 89
 
 ! pick a random number to see if particle is inside cloud
-            rn = ran3(88)
+            rn = ran3(idummy,inext,inextp,ma,iff)
             if (rn .le. ftotal) then    ! in
-            rn1=ran3(881)
+            rn1=ran3(idummy,inext,inextp,ma,iff)
               if (rn1 .lt. fup/ftotal) then   ! updraft
 ! parcel will move "upward" till all particles inside being detrained
  
                 do j=kk,nuvz-1
-                 rn=ran3(j)
+                 rn=ran3(idummy,inext,inextp,ma,iff)
                  if (dmf(j) .eq. 0.0) goto 981
                  fde = abs(der(j+1)/dmf(j))   ! "detrainment" probability at level j+1
                  if (rn .lt. fde .or. zh(j+1) .ge. downtop) goto 981 ! being detrtained from air parcel
@@ -240,8 +254,15 @@
  
               else                            !up/down
 ! move downward till detrained or get to ground
-                do j=kk,2,-1
-                 rn=ran3(j)
+! ROIHU: was 'do j=kk,2,-1'. For a particle already in the bottom layer (kk=1,
+! i.e. zp < zf(2)) that is a zero-trip loop, j keeps the value 1, and the
+! zp=zf(j-1)+... below reads zf(0) -- one element before the array. Starting at
+! max(kk,2) is a no-op for kk>=2, and for kk=1 it runs the j=2 iteration, whose
+! 'j .eq. 2' test always branches to the label. So the particle ends up placed
+! within the bottom layer, which is what "till detrained or get to ground"
+! means for every other particle that reaches the bottom.
+                do j=max(kk,2),2,-1
+                 rn=ran3(idummy,inext,inextp,ma,iff)
                  if (umf(j) .eq. 0.0) goto 1021
                  fde = abs(uer(j-1)/umf(j))  ! "detrainment" at level j-1
                  if(rn .lt. fde .or. j .eq. 2) goto 1021

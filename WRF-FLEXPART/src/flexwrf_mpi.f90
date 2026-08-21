@@ -112,6 +112,9 @@
 !    print*,'after 1'
 
   print*,'MPI id',myid
+! Seed the convection-scheme generator (redist/redist_kf) once per rank, so the
+! ranks do not all walk the same random stream.
+  call ran3_seed(320+myid*4049)
 ! Generate a large number of random numbers
 !         write(*,9100) 'degrees longitude,latitude', 
 !     +                 'degrees longitude,latitude'

@@ -54,7 +54,12 @@ function ran1(idum)
 end function ran1
 
 
+! NB: idum is ignored -- ran3()'s state comes from ran_mod's /random/ common
+! block (seed it with ran3_seed). The dummy is kept so the commented-out callers
+! in initialize_cbl_vel.f90 still match.
 function gasdev(idum)
+
+  use ran_mod
 
   implicit none
 
@@ -65,8 +70,8 @@ function gasdev(idum)
   real, external :: ran3
 
   if (iset.eq.0) then
-1   v1=2.*ran3(idum)-1.
-    v2=2.*ran3(idum)-1.
+1   v1=2.*ran3(idummy,inext,inextp,ma,iff)-1.
+    v2=2.*ran3(idummy,inext,inextp,ma,iff)-1.
     r=v1**2+v2**2
     if(r.ge.1.0 .or. r.eq.0.0) go to 1
     fac=sqrt(-2.*log(r)/r)
@@ -103,6 +108,29 @@ subroutine gasdev1(idum,random1,random2,inext,inextp,ma,iff)
    if (random1.gt.3.) random1=3.
    if (random2.gt.3.) random2=3.
 end subroutine gasdev1
+
+
+!**********************************************************************
+! Seed the ran3() generator state held in ran_mod's /random/ common block.
+! That block is only used by the convection redistribution routines
+! (redist.f90, redist_kf.f90). Without this call the block stays zeroed and
+! every MPI rank would draw the identical stream; setting iff=0 with a
+! negative idummy makes the next ran3() call run its initialisation branch.
+!**********************************************************************
+subroutine ran3_seed(seedval)
+
+  use ran_mod
+
+  implicit none
+  integer, intent(in) :: seedval
+
+  iff    = 0
+  idummy = -abs(seedval)-1
+  inext  = 0
+  inextp = 0
+  ma     = 0
+
+end subroutine ran3_seed
 
 
 function ran3(idum,inext,inextp,ma,iff)
