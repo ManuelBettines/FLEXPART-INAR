@@ -28,7 +28,7 @@ FLEXWRF_INPUT="${FLEXWRF_INPUT:-flexwrf.input}"
 FLEXWRF_ENV="${FLEXWRF_ENV:-../roihu_env.sh}"
 #-------------------------------------------------------------------------------------
 
-set -uo pipefail
+set -o pipefail
 cd "$SLURM_SUBMIT_DIR"
 
 source "$FLEXWRF_ENV" || { echo "ERROR: cannot source $FLEXWRF_ENV" >&2; exit 1; }

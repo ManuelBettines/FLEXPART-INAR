@@ -19,7 +19,7 @@
 # the makefile links with `$(FC) *.o`, so serial, omp and mpi objects sharing one
 # directory silently produce a mixed, broken binary.
 #=====================================================================================
-set -uo pipefail
+set -o pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="$ROOT/src"

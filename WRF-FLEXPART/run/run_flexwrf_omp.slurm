@@ -33,7 +33,7 @@ FLEXWRF_INPUT="${FLEXWRF_INPUT:-flexwrf.input}"
 FLEXWRF_ENV="${FLEXWRF_ENV:-../roihu_env.sh}"
 #-------------------------------------------------------------------------------------
 
-set -uo pipefail
+set -o pipefail
 cd "$SLURM_SUBMIT_DIR"
 
 # Load exactly the modules the binary was built with. This is why the old Puhti

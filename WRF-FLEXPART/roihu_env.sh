@@ -22,7 +22,7 @@
 FLEXWRF_GCC=${FLEXWRF_GCC:-gcc/15.2.0}
 FLEXWRF_MODULES=${FLEXWRF_MODULES:-"openmpi/5.0.10 hdf5/1.14.6 netcdf-c/4.9.3 netcdf-fortran/4.6.2"}
 
-if [ -z "$FLEXWRF_SKIP_MODULES" ]; then
+if [ -z "${FLEXWRF_SKIP_MODULES:-}" ]; then
 
   if [ "$(uname -m)" != "x86_64" ]; then
     echo "ERROR: this is a $(uname -m) node ($(hostname))." >&2

@@ -16,9 +16,8 @@ cd run && sbatch --account=project_XXXXXXX run_flexwrf_omp.slurm
 ## 1. What this code is
 
 This is **not** the plain tarball from flexpart.eu. It is the INAR working copy of
-FLEXPART-WRF 3.3.2, modified by **Diego Aliaga**, with contributions from
-**Victoria Sinclair** (UH) and **Jerome Brioude** (Université de la Réunion), and used
-for the SALTENA campaign in Bolivia and for the Izaña runs since. See
+FLEXPART-WRF 3.3.2, modified by **Diego Aliaga**, and used
+for the SALTENA campaign in Bolivia and for the Izaña campaign since. See
 [`src/README.md`](src/README.md) for the modification notes and
 [`src/README.txt`](src/README.txt) for Brioude's upstream release notes.
 
@@ -119,6 +118,8 @@ to build in.
 
 ## 4. Compiling
 
+**You do not need to load any modules or source anything first.** Just run:
+
 ```bash
 ./compile_roihu.sh              # all three flavours (default)
 ./compile_roihu.sh omp          # just the one you need
@@ -130,8 +131,18 @@ to build in.
 It takes a few minutes and is small enough for the login node. If you would rather not
 tie up a login shell: `sbatch --account=project_XXXXXXX compile_roihu.slurm`.
 
-The script loads the modules (`roihu_env.sh`), builds each flavour in its **own**
-directory under `build/`, and installs the result into `bin/`. It ends with a summary
+The script sources [`roihu_env.sh`](roihu_env.sh) itself — that is what loads the
+module stack and works out the netCDF flags — then builds each flavour in its **own**
+directory under `build/`, and installs the result into `bin/`.
+
+The only times you source `roihu_env.sh` by hand are:
+
+- running `make -f makefile.roihu ...` directly instead of using this script;
+- launching a `flexwrf33_gnu_*` binary yourself rather than through `run/*.slurm`
+  (the Slurm scripts source it for you).
+
+In both cases the modules must be the same ones the binary was built with, which is
+the whole reason that file exists. It ends with a summary
 and checks with `ldd` that netCDF/MPI/OpenMP actually resolve:
 
 ```
