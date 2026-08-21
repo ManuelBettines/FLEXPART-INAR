@@ -20,6 +20,13 @@
 !* You should have received a copy of the GNU General Public License   *
 !* along with FLEXPART.  If not, see <http://www.gnu.org/licenses/>.   *
 !***********************************************************************
+!***********************************************************************
+!* Modified 2026-08, M. Bettineschi (INAR, University of Helsinki):    *
+!*   Moved igrid/ipoint/numberp/igridn/sumpartgrid from the stack      *
+!*   to the heap and sized sumpartgrid from the grid dimensions        *
+!*   instead of a hard-wired 1000000; replaced three 'goto'            *
+!*   statements that exited their enclosing loop with 'cycle'.         *
+!***********************************************************************
       subroutine convmix_kfeta(itime)
 !                          i
 !**************************************************************

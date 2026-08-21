@@ -20,6 +20,11 @@
 ! You should have received a copy of the GNU General Public License   *
 ! along with FLEXPART.  If not, see <http://www.gnu.org/licenses/>.   *
 !**********************************************************************
+!***********************************************************************
+!* Modified 2026-08, M. Bettineschi (INAR, University of Helsinki):    *
+!*   Selected a different nxmax/nymax/nuvzmax/nwzmax/nzmax preset      *
+!*   for the Roihu runs; settings only, no code change.                *
+!***********************************************************************
 
 !*******************************************************************************
 !   Include file for calculation of particle trajectories (Program FLEXPART)   *

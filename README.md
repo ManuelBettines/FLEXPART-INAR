@@ -72,5 +72,29 @@ hard-codes a project number; you pass it to `sbatch --account=...` at submission
 
 ---
 
+## License
+
+**GNU General Public License v3 or later** — see [`LICENSE`](LICENSE) for the full text.
+
+`WRF-FLEXPART/src/` is FLEXPART-WRF v3.3.2, copyright J. Brioude, D. Arnold, A. Stohl
+and the other FLEXPART authors named in the file headers, released under the GPLv3.
+This repository redistributes it under the same terms, along with the Roihu build and
+run scripts. Files modified at INAR carry a dated modification notice in their header,
+as GPLv3 §5(a) requires.
+
+A few files under `src/` come from third parties and keep their own (GPL-compatible)
+licenses, stated in their headers:
+
+| File(s) | Origin | License |
+|---|---|---|
+| `mt_stream.f90`, `gf2xe.f90`, `mt_kind_defs.f90` | K.-I. Ishikawa, Mersenne Twister | 3-clause BSD |
+| `ranlux.f90` | F. James, CERN | see header |
+| `map_proj_wrf_subaa.f90` | NOAA/OAR/FSL | public domain, open-source disclaimer |
+
+Citing the papers below is an academic courtesy, not a license condition — but please do it.
+
+---
+
 ## Contacts
+For questions, suggestions, request, or any other thing you can contact:
 manuel.bettineschi@helsinki.fi

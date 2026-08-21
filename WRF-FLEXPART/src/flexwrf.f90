@@ -20,6 +20,11 @@
 !* You should have received a copy of the GNU General Public License   *
 !* along with FLEXPART.  If not, see <http://www.gnu.org/licenses/>.   *
 !***********************************************************************
+!***********************************************************************
+!* Modified 2026-08, M. Bettineschi (INAR, University of Helsinki):    *
+!*   Seed the ran3 generator used by the convection redistribution     *
+!*   routines (ran3_seed call added before the time loop).             *
+!***********************************************************************
 program flexwrf
 !*******************************************************************************
 !                                                                              *

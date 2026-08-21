@@ -83,11 +83,11 @@ At the end of the compilation you should get the following message:
  BUILD SUMMARY
 ==============================================================================
  FLAVOUR  STATUS   BINARY
- serial   OK       /projappl/project_2018181/bettines/FLEXPART/WRF-FLEXPART/bin/flexwrf33_gnu_serial (1.1M)
- omp      OK       /projappl/project_2018181/bettines/FLEXPART/WRF-FLEXPART/bin/flexwrf33_gnu_omp (1.1M)
- mpi      OK       /projappl/project_2018181/bettines/FLEXPART/WRF-FLEXPART/bin/flexwrf33_gnu_mpi (512)
+ serial   OK       /projappl/project_XXXXXXX/$USER/FLEXPART/WRF-FLEXPART/bin/flexwrf33_gnu_serial (1.1M)
+ omp      OK       /projappl/project_XXXXXXX/$USER/FLEXPART/WRF-FLEXPART/bin/flexwrf33_gnu_omp (1.1M)
+ mpi      OK       /projappl/project_XXXXXXX/$USER/FLEXPART/WRF-FLEXPART/bin/flexwrf33_gnu_mpi (512)
 
- All requested flavours built. Binaries are in /projappl/project_2018181/$USER/FLEXPART/WRF-FLEXPART/bin/
+ All requested flavours built. Binaries are in /projappl/project_XXXXXXX/$USER/FLEXPART/WRF-FLEXPART/bin/
  Next: see README.md -> 'Preparing a run' and run/run_flexwrf_omp.slurm
 ==============================================================================
 ```

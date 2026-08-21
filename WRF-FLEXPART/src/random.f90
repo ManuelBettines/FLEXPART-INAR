@@ -18,6 +18,11 @@
 ! You should have received a copy of the GNU General Public License   *
 ! along with FLEXPART.  If not, see <http://www.gnu.org/licenses/>.   *
 !**********************************************************************
+!**********************************************************************
+! Modified 2026-08, M. Bettineschi (INAR, University of Helsinki):    *
+!   Added subroutine ran3_seed; gasdev now draws on the ran3          *
+!   generator state held in ran_mod rather than a local seed.         *
+!**********************************************************************
 
 !  Taken from Press et al., Numerical Recipes
 

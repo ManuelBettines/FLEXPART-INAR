@@ -20,6 +20,12 @@
 !* You should have received a copy of the GNU General Public License   *
 !* along with FLEXPART.  If not, see <http://www.gnu.org/licenses/>.   *
 !***********************************************************************
+!***********************************************************************
+!* Modified 2026-08, M. Bettineschi (INAR, University of Helsinki):    *
+!*   Pass the complete ran3 generator state (from ran_mod) rather      *
+!*   than a local seed; fixed an out-of-bounds zf(0) access in the     *
+!*   downdraft loop for particles already in the lowest layer.         *
+!***********************************************************************
 
 ! THIS CODE IS TO REDISTRIBUTE PARTICLES INVOLVED IN UPDRAFT OR/AND  DOWDRAFT
 ! TWO OPTIONS: 2- simply well-mixed inside updraft 

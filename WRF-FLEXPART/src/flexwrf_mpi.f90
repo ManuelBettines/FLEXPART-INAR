@@ -20,6 +20,12 @@
 !* You should have received a copy of the GNU General Public License   *
 !* along with FLEXPART.  If not, see <http://www.gnu.org/licenses/>.   *
 !***********************************************************************
+!***********************************************************************
+!* Modified 2026-08, M. Bettineschi (INAR, University of Helsinki):    *
+!*   Seed the ran3 generator used by the convection redistribution     *
+!*   routines once per MPI rank, so the ranks do not all walk the      *
+!*   same random stream.                                               *
+!***********************************************************************
       program flexwrf_mpi
 !
 !*******************************************************************************
