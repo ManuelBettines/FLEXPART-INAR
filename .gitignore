@@ -1,0 +1,46 @@
+# ---- build artefacts -----------------------------------------------------
+*.o
+*.mod
+*.smod
+*.a
+build/
+bin/
+*.exe
+
+# FLEXPART-WRF executables (rebuild them, never commit them: they are tied to
+# the compiler, the module stack AND the domain sizes in src/par_mod.f90)
+flexwrf33_gnu_*
+flexwrf*_mpi
+flexwrf*_omp
+flexwrf*_serial
+
+# ---- run-time output and logs --------------------------------------------
+slurm-*.out
+flexwrf_*.out
+flexwrf_*.err
+compile_*.log
+*.log
+
+# ---- generated / user-specific namelists ---------------------------------
+# Real namelists are large (a backward run with hourly releases is ~1 MB of
+# RELEASES blocks) and specific to one case. Commit templates + the generators
+# in WRF-FLEXPART/run/ instead, and keep the generated files locally.
+flexinput.*
+AVAILABLE[0-9]*
+flexwrf.input
+!*/run/AVAILABLE.template
+!*/run/flexwrf.input.template
+# upstream example inputs are small and ARE tracked
+!*/examples/**
+
+# ---- local reference material (not for GitHub) ---------------------------
+local_reference/
+
+# ---- editors and Python --------------------------------------------------
+*~
+*.swp
+.DS_Store
+__pycache__/
+*.pyc
+.idea/
+*.iml
