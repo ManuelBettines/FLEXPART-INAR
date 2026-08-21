@@ -316,6 +316,30 @@ Level options — pick one:
 | `--levels "250,500,1000,2000,5000"` | exactly these level tops, in metres |
 | `--dz 250 --ztop 7000` | evenly spaced, 250 m thick, up to 7 km |
 | `--nlevels 20 --ztop 5000` | 20 evenly spaced levels up to 5 km |
+| `--log-levels 20 --zfirst 20 --ztop 7000` | 20 levels, thin at the ground and thickening with height |
+
+For a footprint run the near-surface layers are the ones carrying the signal, so even
+spacing wastes levels on the free troposphere. `--log-levels N` gives layers whose
+**thickness** grows by a constant factor: the lowest is `--zfirst` metres thick
+(default 50) and the factor is chosen so the top layer ends exactly at `--ztop`.
+
+```bash
+./generate_releases.py --input flexwrf.input --wrf /scratch/.../wrfout/ \
+    --lat 28.309 --lon -16.499 --outgrid --log-levels 20 --zfirst 20 --ztop 7000
+# log levels: 20 layers from 20 m thick at the ground to 1423 m at the top
+#             (ratio 1.252), reaching 7000 m
+```
+
+which writes the level tops
+
+```
+20.0  45.0  76.4  115.6  164.7  226.1  303.0  399.3  519.8  670.6
+859.4  1095.6  1391.4  1761.6  2224.9  2804.8  3530.7  4439.3  5576.5  7000.0
+```
+
+— eight levels below 500 m, where evenly spaced 350 m layers would have given one. Ask
+for more levels than `--zfirst` can grow into (`--zfirst 200` with 40 levels below
+5 km) and the script says so rather than writing a grid that thins with height.
 
 `--outgrid-res METRES` coarsens the horizontal grid — output every 3 km from a 1 km run
 is `--outgrid-res 3000`, which cuts the output volume ninefold. Anything left over

@@ -16,10 +16,12 @@ still work if you prefer them.
 
 --outgrid additionally rebuilds the OUTGRID section to match the WRF grid exactly --
 same origin, same cell size, same extent, or a coarser multiple of it with
---outgrid-res. The vertical levels are yours to choose, with --levels, or --dz/--ztop:
+--outgrid-res. The vertical levels are yours to choose: an explicit --levels list,
+even spacing with --dz/--ztop or --nlevels/--ztop, or logarithmic spacing that keeps
+the resolution near the ground where a footprint run needs it:
 
     ./generate_releases.py --input flexwrf.input --wrf /scratch/.../wrfout/ \\
-        --lat 28.309 --lon -16.499 --outgrid --dz 250 --ztop 7000
+        --lat 28.309 --lon -16.499 --outgrid --log-levels 20 --zfirst 20 --ztop 7000
 
 Everything after the NUMPOINT line is replaced by the new blocks, NUMPOINT is set to
 their count, and the original is kept as flexwrf.input.bak. Without --start / --end the
@@ -205,11 +207,12 @@ def write_input(path, out_path, lines, numpoint, blocks, count, backup):
 
 
 def build_levels(a, ap):
-    """The vertical levels of the output grid, from --levels or --dz/--nlevels."""
-    given = [x is not None for x in (a.levels, a.dz, a.nlevels)]
+    """The vertical levels of the output grid, from --levels, --dz, --nlevels or --log."""
+    given = [x is not None for x in (a.levels, a.dz, a.nlevels, a.log_levels)]
     if sum(given) != 1:
         ap.error("--outgrid needs the vertical resolution: one of --levels, "
-                 "--dz (with --ztop) or --nlevels (with --ztop)")
+                 "--dz (with --ztop), --nlevels (with --ztop) or --log-levels "
+                 "(with --ztop)")
     if a.levels:
         try:
             levels = [float(v) for v in re.split(r"[,\s]+", a.levels.strip()) if v]
@@ -217,20 +220,73 @@ def build_levels(a, ap):
             ap.error("--levels must be a comma- or space-separated list of heights")
     else:
         if a.ztop is None:
-            ap.error("--dz/--nlevels need --ztop, the top of the output grid in metres")
+            ap.error("--dz/--nlevels/--log-levels need --ztop, the top of the output "
+                     "grid in metres")
+        if a.ztop <= 0:
+            ap.error("--ztop must be positive")
         if a.dz is not None:
             if a.dz <= 0:
                 ap.error("--dz must be positive")
             n = int(round(a.ztop / a.dz))
             levels = [a.dz * k for k in range(1, n + 1)]
-        else:
+        elif a.nlevels is not None:
             if a.nlevels < 1:
                 ap.error("--nlevels must be at least 1")
             levels = [a.ztop * k / a.nlevels for k in range(1, a.nlevels + 1)]
+        else:
+            levels = log_levels(a, ap)
     if not levels:
         ap.error("no output levels")
-    if any(b <= x for x, b in zip(levels, levels[1:])) or levels[0] <= 0:
-        ap.error("output levels must be positive and strictly increasing")
+    levels = [round(z, 1) for z in levels]
+    if levels[0] <= 0 or any(b <= x for x, b in zip(levels, levels[1:])):
+        ap.error("output levels must be positive and strictly increasing (with "
+                 "--log-levels, raise --zfirst or ask for fewer levels)")
+    return levels
+
+
+def log_levels(a, ap):
+    """N levels whose THICKNESS grows geometrically: thin near the ground, thick aloft.
+
+    The first layer is --zfirst metres thick and each one after it is `r` times the one
+    below, with `r` chosen so the top layer ends exactly at --ztop. For a footprint run
+    the surface layer is the one that matters, and this keeps it thin without spending
+    all the levels on the free troposphere.
+    """
+    n = a.log_levels
+    if n < 2:
+        ap.error("--log-levels must be at least 2 (use --levels for a single level)")
+    dz1 = a.zfirst
+    if dz1 <= 0:
+        ap.error("--zfirst must be positive")
+    if dz1 * n >= a.ztop:
+        ap.error(f"--zfirst {dz1:g} m x {n} levels already reaches {dz1 * n:g} m; for "
+                 f"levels that grow with height give a smaller --zfirst, fewer levels, "
+                 f"or a higher --ztop (now {a.ztop:g} m)")
+
+    def total(r):  # depth reached by n layers with ratio r
+        return dz1 * n if abs(r - 1.0) < 1e-12 else dz1 * (r ** n - 1.0) / (r - 1.0)
+
+    lo, hi = 1.0, 2.0
+    while total(hi) < a.ztop:
+        hi *= 2.0
+        if hi > 1e3:
+            ap.error("cannot fit logarithmic levels into --ztop; check --zfirst")
+    for _ in range(200):
+        mid = 0.5 * (lo + hi)
+        if total(mid) < a.ztop:
+            lo = mid
+        else:
+            hi = mid
+    ratio = 0.5 * (lo + hi)
+
+    levels, z = [], 0.0
+    for k in range(n):
+        z += dz1 * ratio ** k
+        levels.append(z)
+    levels[-1] = a.ztop  # exactly, not 6999.97
+    print(f"log levels: {n} layers from {dz1:g} m thick at the ground to "
+          f"{levels[-1] - levels[-2]:.0f} m at the top (ratio {ratio:.3f}), "
+          f"reaching {a.ztop:g} m", file=sys.stderr)
     return levels
 
 
@@ -347,6 +403,12 @@ def main(argv=None):
                     help="evenly spaced levels of this thickness, up to --ztop")
     og.add_argument("--nlevels", type=int, metavar="N",
                     help="N evenly spaced levels up to --ztop")
+    og.add_argument("--log-levels", type=int, metavar="N", dest="log_levels",
+                    help="N logarithmically spaced levels from --zfirst up to --ztop: "
+                         "thin layers near the ground, thicker aloft")
+    og.add_argument("--zfirst", type=float, default=50.0, metavar="METRES",
+                    help="thickness of the lowest layer for --log-levels; every layer "
+                         "above is a constant factor thicker (default: 50 m)")
     og.add_argument("--ztop", type=float, metavar="METRES",
                     help="top of the output grid, for --dz / --nlevels")
     ap.add_argument("--kindz", type=int, default=1, choices=(1, 2, 3),
