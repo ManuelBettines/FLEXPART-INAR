@@ -41,7 +41,7 @@ ssh -A -X <username>@roihu-cpu.csc.fi
 
 # code lives in /projappl (backed up, quota for software)
 cd /projappl/project_XXXXXXX/$USER
-git clone <this-repo-url> FLEXPART
+git clone git@github.com:ManuelBettines/FLEXPART-INAR.git FLEXPART
 cd FLEXPART
 ```
 
