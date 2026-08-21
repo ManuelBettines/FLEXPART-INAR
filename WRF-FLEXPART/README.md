@@ -15,15 +15,15 @@ cd run && sbatch --account=project_XXXXXXX run_flexwrf_omp.slurm
 
 ## 1. What this code is
 
-This is **not** the plain tarball from flexpart.eu. It is the INAR working copy of
+This is **not** the official release from flexpart.eu. It is the INAR working copy of
 FLEXPART-WRF 3.3.2, modified by **Diego Aliaga**, and used
-for the SALTENA campaign in Bolivia and for the Izaña campaign since. See
+for the SALTENA campaign in Bolivia and for the Izaña campaign (among others). See
 [`src/README.md`](src/README.md) for the modification notes and
 [`src/README.txt`](src/README.txt) for Brioude's upstream release notes.
 
 Practical consequences:
 
-- Behaviour differs from the official release in places (surface-layer handling,
+- Behaviour slightly differs from the official release in places (surface-layer handling,
   reading PBLH from WRF, comparison operators). Do not assume upstream documentation
   describes this binary exactly.
 - Do not replace `src/` with a fresh upstream download expecting the same results.
@@ -49,107 +49,47 @@ WRF-FLEXPART/
 
 ---
 
-## 2. Before you compile: the domain sizes are compiled in
-
-**This is the single thing that trips up everyone.** FLEXPART-WRF sizes its arrays at
-compile time, in [`src/par_mod.f90`](src/par_mod.f90). If your WRF domain does not fit,
-the model stops — or worse, misreads the fields. **Changing your WRF domain means
-recompiling FLEXPART-WRF.**
-
-The values currently committed:
-
-| Parameter | Value | Meaning |
-|---|---|---|
-| `nxmax`, `nymax` | 301, 187 | max grid points of the **mother** domain (x, y) |
-| `nuvzmax`, `nwzmax`, `nzmax` | 46, 46, 46 | max vertical levels |
-| `maxnests` | 4 | max number of nested WRF domains |
-| `nxmaxn`, `nymaxn` | 400, 283 | max grid points of a **nested** domain |
-| `maxageclass` | 1 | max age classes (`NAGECLASS` in the input file) |
-| `maxspec` | 1 | max species per release |
-| `maxreceptor` | 200 | max receptors |
-| `maxwf` | 50000 | max wind fields, i.e. lines in `AVAILABLE` |
-
-To adapt them, check your wrfout first:
+## 2. Getting the code onto Roihu
 
 ```bash
-module load netcdf-c/4.9.3
-ncdump -h /scratch/.../wrfout_d01_2022-03-21_00:00:00 | head -20
-#   west_east = 300 ; south_north = 186 ; bottom_top = 45 ;
-# FLEXPART wants the STAGGERED counts, i.e. one more than each of those:
-#   nxmax = 301, nymax = 187, nuvzmax = nwzmax = nzmax = 46
-```
-
-then edit the uncommented `integer,parameter ::` lines in `src/par_mod.f90` (several
-past configurations are kept commented out there as examples) and **rebuild from
-scratch**:
-
-```bash
-./compile_roihu.sh --clean
-```
-
-Symptoms of getting this wrong:
-
-| Message | Fix |
-|---|---|
-| `NUMBER OF AGE CLASSES GREATER THAN MAXIMUM ALLOWED` | raise `maxageclass` |
-| `TOO MANY SPECIES` | raise `maxspec` |
-| errors mentioning `nxmax` / `nymax` / `nuvzmax` | your WRF grid is bigger than the compiled limits |
-| plausible-looking but wrong concentrations | check the limits before you blame the physics |
-
-Keep the values no larger than you need: these are static arrays, so oversizing them
-wastes memory on every rank.
-
----
-
-## 3. Getting the code onto Roihu
-
-```bash
-ssh -A -X <username>@roihu-cpu.csc.fi          # x86_64 CPU login node — see section 6.1
+ssh -A -X <username>@roihu-cpu.csc.fi 
 
 cd /projappl/project_XXXXXXX/$USER
-git clone <this-repo-url> FLEXPART
+git clone git@github.com:ManuelBettines/FLEXPART-INAR.git FLEXPART
 cd FLEXPART/WRF-FLEXPART
 ```
 
-Code in `/projappl`; wrfout input and model output in `/scratch`. `$HOME` is too small
-to build in.
+Code in `/projappl`; wrfout input and model output in `/scratch`. 
 
 ---
 
-## 4. Compiling
+## 3. Compiling
 
 **You do not need to load any modules or source anything first.** Just run:
 
 ```bash
-./compile_roihu.sh              # all three flavours (default)
-./compile_roihu.sh omp          # just the one you need
-./compile_roihu.sh omp -j 16    # more parallel make jobs
-./compile_roihu.sh --clean      # wipe build/ first — do this after editing par_mod.f90
-./compile_roihu.sh --help
+./compile_roihu.sh           
 ```
 
-It takes a few minutes and is small enough for the login node. If you would rather not
-tie up a login shell: `sbatch --account=project_XXXXXXX compile_roihu.slurm`.
+It takes a few minutes and is small enough for the login node.
 
 The script sources [`roihu_env.sh`](roihu_env.sh) itself — that is what loads the
 module stack and works out the netCDF flags — then builds each flavour in its **own**
 directory under `build/`, and installs the result into `bin/`.
 
-The only times you source `roihu_env.sh` by hand are:
-
-- running `make -f makefile.roihu ...` directly instead of using this script;
-- launching a `flexwrf33_gnu_*` binary yourself rather than through `run/*.slurm`
-  (the Slurm scripts source it for you).
-
-In both cases the modules must be the same ones the binary was built with, which is
-the whole reason that file exists. It ends with a summary
-and checks with `ldd` that netCDF/MPI/OpenMP actually resolve:
-
+At the end of the compilation you should get the following message:
 ```
+==============================================================================
+ BUILD SUMMARY
+==============================================================================
  FLAVOUR  STATUS   BINARY
- serial   OK       .../bin/flexwrf33_gnu_serial (1.0M)
- omp      OK       .../bin/flexwrf33_gnu_omp (1.1M)
- mpi      OK       .../bin/flexwrf33_gnu_mpi (1.1M)
+ serial   OK       /projappl/project_2018181/bettines/FLEXPART/WRF-FLEXPART/bin/flexwrf33_gnu_serial (1.1M)
+ omp      OK       /projappl/project_2018181/bettines/FLEXPART/WRF-FLEXPART/bin/flexwrf33_gnu_omp (1.1M)
+ mpi      OK       /projappl/project_2018181/bettines/FLEXPART/WRF-FLEXPART/bin/flexwrf33_gnu_mpi (512)
+
+ All requested flavours built. Binaries are in /projappl/project_2018181/$USER/FLEXPART/WRF-FLEXPART/bin/
+ Next: see README.md -> 'Preparing a run' and run/run_flexwrf_omp.slurm
+==============================================================================
 ```
 
 Per-flavour logs are kept in `build/build_<flavour>.log`.
@@ -158,7 +98,7 @@ Per-flavour logs are kept in `build/build_<flavour>.log`.
 
 | Binary | When |
 |---|---|
-| `flexwrf33_gnu_omp` | **the normal choice** — one node, many threads. This is what INAR production runs use. |
+| `flexwrf33_gnu_omp` | **the "standard" choice** — one node, many threads. |
 | `flexwrf33_gnu_mpi` | hybrid MPI+OpenMP across several nodes. Only when one node is not enough; it scales with particle count, not with output grid size (rank 0 gathers the fields). |
 | `flexwrf33_gnu_serial` | debugging and quick tests. |
 
@@ -167,14 +107,6 @@ Per-flavour logs are kept in `build/build_<flavour>.log`.
 A clean build emits about a dozen warnings per flavour. They all come from upstream
 legacy Fortran and are covered by the `-std=legacy` / `-fallow-invalid-boz` /
 `-fallow-argument-mismatch` flags:
-
-| Warning | What it is |
-|---|---|
-| `readinput.f90:678: Array reference ... out of bounds (2 > 1)` | the age-class read loop would overrun `lage(maxageclass)` if `NAGECLASS > maxageclass`. The model checks this at run time and stops cleanly, so it is harmless as long as your `NAGECLASS` is `<= maxageclass` (section 2). |
-| `BOZ literal constant ...` | old-style hex/octal constants in the Mersenne-Twister random number code |
-| `random.f90: Missing actual argument for argument 'inext'` | legacy call into `ran3` |
-| `netcdf_output_mod.F90: Array reference ... out of bounds (0 < 1)` | zero-based output grid loops that gfortran's static analysis cannot see through |
-| `Rank mismatch between actual argument ...` | scalar/array mismatch in the netCDF attribute calls |
 
 What you should **not** ignore is anything labelled `Error:` — the build stops there
 and the summary reports `FAILED`.
