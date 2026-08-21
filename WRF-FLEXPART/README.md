@@ -113,7 +113,7 @@ and the summary reports `FAILED`.
 
 ---
 
-## 5. Preparing a run
+## 4. Preparing a run
 
 Work in a per-case directory on `/scratch`, not in the repository:
 
@@ -123,7 +123,7 @@ cd       /scratch/project_XXXXXXX/$USER/FLEXPART/izana_backward
 cp /projappl/project_XXXXXXX/$USER/FLEXPART/WRF-FLEXPART/run/* .
 ```
 
-### 5.1 The input file, and its three path lines
+### 4.1 The input file, and its three path lines
 
 FLEXPART-WRF reads **one** file (historically split into PATHNAMES, COMMAND,
 AGECLASSES, OUTGRID, RECEPTORS, SPECIES and RELEASES). Start from
@@ -160,58 +160,99 @@ of a failed run:
 - With more than one domain, lines 3 and 4 repeat per domain — see
   [`examples/flexwrf.input.backward2`](examples/) for the two-domain layout.
 
-### 5.2 The AVAILABLE file
+### 4.2 The AVAILABLE file
 
 `AVAILABLE` maps every time step to the wrfout file that contains it: three header
 lines, then one row per step.
 
 The catch: WRF normally writes **several time frames per file**, so all the rows
-belonging to one file must name that **same** file — the one stamped at the file's
-start time, not at the time step. Generate it rather than writing it by hand:
+belonging to one file must name that **same** file — `readwind.f90` opens it and scans
+its `Times` variable for the step it wants. Do not write this by hand: point
+`generate_available.py` at the directory holding the wrfout files and it works out the
+rest itself — which domains exist, how many frames each file holds, and whether the
+output is hourly, 3-hourly, 6-hourly or one frame per file. The frame times come from
+the `Times` variable inside each file, so nothing is assumed about the naming.
 
 ```bash
-# one wrfout file per day holding 24 hourly frames (the Izana setup)
-./generate_available.py --start 20220321 --end "20220627 000000" > AVAILABLE1
+# scan the directory; writes AVAILABLE1 for the first domain, AVAILABLE2 for the next...
+./generate_available.py /scratch/<PROJECT>/<user>/WRF/wrfout_d01/
 
-# domain 2, 30-minute frames, 6 frames (3 h) per file
-./generate_available.py --start 20220321 --end "20220627 000000" \
-    --domain 2 --interval 1800 --hours-per-file 3 > AVAILABLE2
+# one domain only, to a name you choose
+./generate_available.py /scratch/.../wrfout/ --domain 1 -o AVAILABLE1
+
+# trim to the simulation period (a bare date means 00:00:00 of that day)
+./generate_available.py /scratch/.../wrfout/ --start 20220321 --end "20220627 000000"
 
 ./generate_available.py --help
 ```
 
-Sanity-check it against reality — a missing file is only discovered mid-run:
+It reports what it found on stderr, e.g.
 
-```bash
-awk 'NR>3 {gsub(/'"'"'/,"",$3); print $3}' AVAILABLE1 | sort -u | \
-  while read f; do [ -f "/scratch/.../wrfout/$f" ] || echo "MISSING: $f"; done
+```
+scanning 99 file(s)
+time frames read: 99 via netCDF4
+d01: 2376 time steps in 99 file(s), 2022-03-21 00:00 -> 2022-06-27 23:00, every 1 h
+d01 -> ./AVAILABLE1
 ```
 
-### 5.3 The RELEASES blocks
+and warns about the things that only bite mid-run otherwise: irregular spacing (a
+missing wrfout file), the same time step present in two files (it keeps one, since
+FLEXPART requires strictly increasing times), and more than `maxwf` rows.
+
+Frames are read with the python `netCDF4` module, falling back to the `ncdump` command
+line tool. If neither is available on the node, `--from-names` takes one frame per file
+from the file name instead, and `--assume-interval SECONDS` fills in the frames between
+consecutive files:
+
+```bash
+./generate_available.py /scratch/.../wrfout/ --from-names --assume-interval 3600
+```
+
+Because the file list comes from the directory itself, the AVAILABLE file cannot name a
+file that is not there — but check that the directory you scanned is the one on line 3
+of `flexwrf.input`, and mind the 120-character path limit.
+
+### 4.3 The RELEASES blocks
 
 A backward run usually releases from the same box every hour, which means hundreds to
-thousands of near-identical 12-line blocks. Generate them:
+thousands of near-identical 12-line blocks. `generate_releases.py` writes them straight
+into the `flexwrf.input` you name:
+
+```bash
+./generate_releases.py --input flexwrf.input \
+    --x1 177000 --y1 98000 --x2 178000 --y2 99000 \
+    --z1 0 --z2 10 --npart 10000
+# flexwrf.input: simulation 2022-05-08 04:00 -> 2022-06-27 00:00
+# --start not given, using the simulation start 20220508 040000
+# --end not given, no release starts after 20220626 230000 so the last one ends by the simulation end 20220627 000000
+# backed up flexwrf.input -> flexwrf.input.bak
+# 1196 release blocks, 20220508 040000 -> 20220627 000000; NUMPOINT set to 1196
+```
+
+Everything after the `NUMPOINT` line is replaced by the new blocks and `NUMPOINT` is set
+to their count, so re-running with different options just rewrites them — no manual
+`head`/`cat`/`sed`. The original is kept as `flexwrf.input.bak` (`--no-backup` to skip
+it), and `-o NEWFILE` writes the result elsewhere and leaves the original alone.
+
+With no `--start` / `--end` the release period is taken from the simulation beginning
+and ending dates in that same file, with the last release ending exactly at the
+simulation end — releases outside the modelled window are rejected by FLEXPART, and if
+you give dates that fall outside it the script says so. `--every` sets the spacing
+(default 3600 s) and `--duration` the length of one release (default: same as
+`--every`, i.e. back-to-back).
+
+Without `--input` the blocks go to stdout and `NUMPOINT` is yours to set:
 
 ```bash
 ./generate_releases.py --start "20220508 040000" --end "20220627 000000" \
-    --x1 177000 --y1 98000 --x2 178000 --y2 99000 \
-    --z1 0 --z2 10 --npart 10000 > releases.txt
+    --x1 177000 --y1 98000 --x2 178000 --y2 99000 > releases.txt
 # -> "1196 release blocks -> set NUMPOINT to 1196"   (on stderr)
-```
-
-Then append `releases.txt` after the release header of your input file and put that
-count on the `NUMPOINT` line:
-
-```bash
-head -n 86 flexwrf.input.template > flexwrf.input   # everything up to NUMPOINT
-cat releases.txt >> flexwrf.input
-sed -i 's/^ 1                  NUMPOINT/ 1196               NUMPOINT/' flexwrf.input
 ```
 
 Coordinate units follow `RELEASE_COORD` in the input file: `0` = WRF grid metres
 (what the numbers above are), `1` = degrees lat/lon.
 
-### 5.4 Switches worth understanding
+### 4.4 Switches worth understanding
 
 | Switch | Notes |
 |---|---|
@@ -240,7 +281,7 @@ This looks fatal but **is not** — the `stop` is deliberately commented out in
 modification re-enabled. The message is stale upstream text. The run continues
 normally, and this is the setting the INAR Izaña runs use.
 
-### 5.5 A note on `examples/`
+### 4.5 A note on `examples/`
 
 The files in `examples/` are Brioude's upstream test cases. They are useful as a
 **format reference**, but they will not run against this binary unchanged: they use
@@ -248,7 +289,7 @@ The files in `examples/` are Brioude's upstream test cases. They are useful as a
 `maxageclass = 1` and `maxspec = 1`. Either raise those limits and rebuild
 (section 2), or just read the files for their layout.
 
-### 5.6 Checking an input file without burning a job
+### 4.6 Checking an input file without burning a job
 
 The serial binary parses the whole input and reports the first problem in seconds:
 
@@ -261,7 +302,7 @@ earlier is a formatting or limits problem.
 
 ---
 
-## 6. Submitting
+## 5. Submitting
 
 ```bash
 sbatch --account=project_XXXXXXX run_flexwrf_omp.slurm      # single node, OpenMP
@@ -292,7 +333,7 @@ Monitor with `squeue --me`, `seff <jobid>` (efficiency after it finishes) and th
 
 ---
 
-## 7. Troubleshooting
+## 6. Troubleshooting
 
 | Symptom | Cause and fix |
 |---|---|
@@ -312,7 +353,7 @@ Monitor with `squeue --me`, `seff <jobid>` (efficiency after it finishes) and th
 
 ---
 
-## 8. What was changed for Roihu
+## 7. What was changed for Roihu
 
 `makefile.roihu` is a copy of the upstream `src/makefile.mom` with every deviation
 marked `# ROIHU:`. `src/` itself is untouched, so the model physics is exactly what
