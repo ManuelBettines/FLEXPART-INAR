@@ -40,7 +40,7 @@ WRF-FLEXPART/
 ├── roihu_env.sh           the module stack; sourced by build AND run scripts
 ├── makefile.roihu         Roihu-adapted makefile (see section 6)
 ├── src/                   the Fortran sources
-├── examples/              Brioude's upstream example input files (see section 5.5)
+├── examples/              Brioude's upstream example input files (see section 4.5)
 ├── run/                   templates + generators + Slurm scripts
 ├── build/                 created by the build, one dir per flavour (git-ignored)
 ├── bin/                   the executables land here (git-ignored)
@@ -125,7 +125,7 @@ cp /projappl/project_XXXXXXX/$USER/FLEXPART/WRF-FLEXPART/run/* .
 
 ### 4.1 The input file, and its three path lines
 
-FLEXPART-WRF reads **one** file (historically split into PATHNAMES, COMMAND,
+FLEXPART-WRF reads **one** file (different if compared to the "normal" FLEXPART verision, which splits into PATHNAMES, COMMAND,
 AGECLASSES, OUTGRID, RECEPTORS, SPECIES and RELEASES). Start from
 [`run/flexwrf.input.template`](run/flexwrf.input.template).
 
@@ -155,8 +155,6 @@ of a failed run:
   ```
 
   If you are over, shorten the case directory name or run from a shorter parent.
-- FLEXPART does **not** create the output directory. The supplied Slurm scripts do it
-  for you (they read line 2); if you launch by hand, `mkdir -p` it yourself.
 - With more than one domain, lines 3 and 4 repeat per domain — see
   [`examples/flexwrf.input.backward2`](examples/) for the two-domain layout.
 
@@ -165,193 +163,97 @@ of a failed run:
 `AVAILABLE` maps every time step to the wrfout file that contains it: three header
 lines, then one row per step.
 
-The catch: WRF normally writes **several time frames per file**, so all the rows
-belonging to one file must name that **same** file — `readwind.f90` opens it and scans
-its `Times` variable for the step it wants. Do not write this by hand: point
-`generate_available.py` at the directory holding the wrfout files and it works out the
-rest itself — which domains exist, how many frames each file holds, and whether the
-output is hourly, 3-hourly, 6-hourly or one frame per file. The frame times come from
-the `Times` variable inside each file, so nothing is assumed about the naming.
-
+You can automatically generate the `AVAILABLE` file by running the following command:
 ```bash
-# scan the directory; writes AVAILABLE1 for the first domain, AVAILABLE2 for the next...
 ./generate_available.py /scratch/<PROJECT>/<user>/WRF/wrfout_d01/
-
-# one domain only, to a name you choose
-./generate_available.py /scratch/.../wrfout/ --domain 1 -o AVAILABLE1
-
-# trim to the simulation period (a bare date means 00:00:00 of that day)
-./generate_available.py /scratch/.../wrfout/ --start 20220321 --end "20220627 000000"
-
-./generate_available.py --help
 ```
+It only needs the path to the WRF output and the script will generate automatically the file needed by WRF-FLEXPART.
 
-It reports what it found on stderr, e.g.
+### 4.3 The releases and the output grid
 
-```
-scanning 99 file(s)
-time frames read: 99 via netCDF4
-d01: 2376 time steps in 99 file(s), 2022-03-21 00:00 -> 2022-06-27 23:00, every 1 h
-d01 -> ./AVAILABLE1
-```
-
-and warns about the things that only bite mid-run otherwise: irregular spacing (a
-missing wrfout file), the same time step present in two files (it keeps one, since
-FLEXPART requires strictly increasing times), and more than `maxwf` rows.
-
-**Getting steps you did not expect (10 min, 30 min...)?** That is what is really in
-your files. The script no longer assumes an interval, it reads each file's `Times`
-variable, so a WRF run with `history_interval = 10` gives 144 rows a day. FLEXPART will
-happily use them, but it then reads six times as many wind fields as an hourly run.
-Check what you have and thin it if you want:
-
-```bash
-ncdump -v Times /scratch/.../wrfout_d01_2022-03-21_00:00:00 | tail -20
-
-# drive FLEXPART with hourly wind fields even though WRF wrote every 10 minutes
-./generate_available.py /scratch/.../wrfout/ --every 3600
-```
-
-`--every` must be a whole multiple of the spacing actually present, and the script says
-so if it is not. Keeping the native interval is fine too — just mind that `LSYNCTIME`
-must stay below half of `idiffnorm` (10800 s, `par_mod.f90:104`).
-
-With nests, all domains must have **identical** time steps or FLEXPART stops
-(`readinput.f90:915`); the script compares them and warns before you queue the job.
-
-Frames are read with the python `netCDF4` module, falling back to the `ncdump` command
-line tool. If neither is available on the node, `--from-names` takes one frame per file
-from the file name instead, and `--assume-interval SECONDS` fills in the frames between
-consecutive files:
-
-```bash
-./generate_available.py /scratch/.../wrfout/ --from-names --assume-interval 3600
-```
-
-Because the file list comes from the directory itself, the AVAILABLE file cannot name a
-file that is not there — but check that the directory you scanned is the one on line 3
-of `flexwrf.input`, and mind the 120-character path limit.
-
-### 4.3 The RELEASES blocks
-
-A backward run usually releases from the same box every hour, which means hundreds to
-thousands of near-identical 12-line blocks. `generate_releases.py` writes them straight
-into the `flexwrf.input` you name, and takes the release position in **degrees**:
+`generate_releases.py` fills in the two long sections of `flexwrf.input`: the RELEASES
+blocks (a 12-line block per release — hundreds of them for a backward run) and, with
+`--outgrid`, the OUTGRID section. One command does both:
 
 ```bash
 ./generate_releases.py --input flexwrf.input --wrf /scratch/.../wrfout/ \
-    --lat 28.309 --lon -16.499 --box 1000 \
-    --z1 0 --z2 10 --npart 10000
-# wrfout_d01_...: 300 x 186 points, dx = 1000 m, dy = 1000 m, MAP_PROJ = 1, corners ...
-# release centre 28.309 N -16.499 E -> x = 59598.6 m, y = 45508.2 m (grid fit 0.1 m), box 1000 m
-# flexwrf.input: simulation 2022-05-08 04:00 -> 2022-06-27 00:00
-# --start not given, using the simulation start 20220508 040000
-# --end not given, no release starts after 20220626 230000 so the last one ends by the simulation end 20220627 000000
-# backed up flexwrf.input -> flexwrf.input.bak
-# 1196 release blocks, 20220508 040000 -> 20220627 000000; NUMPOINT set to 1196
+    --lat 28.309 --lon -16.499 --box 1000 --z1 0 --z2 10 --npart 10000 \
+    --outgrid --log-levels 20 --zfirst 20 --ztop 7000
 ```
 
-`--lat/--lon` is the centre of the release box and `--box` its side in metres; give the
-corners instead with `--lat1/--lon1/--lat2/--lon2`, or skip the conversion entirely and
-pass grid metres as before with `--x1/--y1/--x2/--y2`.
+That releases hourly from a 1 km box around the given point, over the whole simulation
+period, and writes an output grid on the WRF grid with 20 levels that are thin near the
+ground. Everything after the `NUMPOINT` line is replaced, `NUMPOINT` is set to the
+number of blocks, `RELEASE_COORD` and `OUTGRID_COORD` are set to `0` (metres, which is
+what gets written), and the previous file is kept as `flexwrf.input.bak`.
 
-The conversion needs `--wrf`: a wrfout file, or the directory holding them, in which
-case the **lowest-numbered domain** is used. That matters — FLEXPART grid metres are
-`x = dx * i` with `i` a zero-based index **on the mother domain** (`map_proj_wrf.f90:606`,
-`xmet0 = 0` in `gridcheck.f90:145`), so pointing at a `d02` file would put your release
-in the wrong place; the script warns if you do. Rather than reimplementing WRF's map
-projections, the inverse is computed from the file's own `XLONG`/`XLAT` fields (nearest
-point plus one Newton step), and the round-trip error is printed — expect a few tens of
-centimetres. `RELEASE_COORD` is set to `0` for you, since what gets written is metres.
+Re-run it with different options as often as you like: it rewrites, it does not append.
 
-To check a single coordinate without touching any input file:
+**Where it writes**
+
+| Flag | Required | Default | What it does |
+|---|---|---|---|
+| `--input FILE` | yes, in practice | — | the `flexwrf.input` to fill in. Without it the release blocks go to stdout and you place them yourself |
+| `--wrf PATH` | with degrees or `--outgrid` | — | a wrfout file, or the directory holding them (the **lowest domain** is used — grid metres are measured on the mother domain) |
+| `-o FILE` | no | overwrite `--input` | write the result here instead, leaving the original alone |
+| `--no-backup` | no | keeps `FILE.bak` | skip the backup copy |
+
+**When to release**
+
+| Flag | Required | Default | What it does |
+|---|---|---|---|
+| `--start "YYYYMMDD HHMMSS"` | no | the simulation start in `--input` | first release |
+| `--end "YYYYMMDD HHMMSS"` | no | so the last release ends at the simulation end | no release starts after this |
+| `--every SECONDS` | no | `3600` | spacing between releases |
+| `--duration SECONDS` | no | same as `--every` | length of one release (back-to-back by default) |
+
+**Where to release** — degrees (needs `--wrf`) or grid metres, not both:
+
+| Flag | Required | Default | What it does |
+|---|---|---|---|
+| `--lat` / `--lon` | one of the three ways | — | centre of the release box, in degrees |
+| `--box METRES` | no | `1000` | side of the box around `--lat/--lon` |
+| `--lat1 --lon1 --lat2 --lon2` | — | — | box corners in degrees (SW, NE) instead of centre + size |
+| `--x1 --y1 --x2 --y2` | — | `98000 177000 99000 178000` | box corners directly in WRF grid metres |
+| `--z1` / `--z2` | no | `0` / `10` | bottom and top of the release, in metres |
+| `--kindz {1,2,3}` | no | `1` | `1` m above ground, `2` above sea level, `3` pressure |
+| `--npart N` | no | `10000` | particles per release |
+| `--xmass` | no | `.1000E+0` | mass per release |
+| `--name STEM` | no | `release` | blocks are named `release1`, `release2`, ... |
+| `--first-index N` | no | `1` | number the first block from here instead of 1 |
+
+**The output grid** — only with `--outgrid`:
+
+| Flag | Required | Default | What it does |
+|---|---|---|---|
+| `--outgrid` | no | off | rebuild the OUTGRID section to cover the whole WRF domain (needs `--input` and `--wrf`) |
+| `--outgrid-res METRES` | no | the WRF `DX` | coarser output cells; `3000` on a 1 km run cuts the output volume ninefold |
+| `--levels "250,500,2000"` | one of these four | — | exactly these level tops, in metres |
+| `--dz METRES --ztop METRES` | — | — | evenly spaced levels of this thickness |
+| `--nlevels N --ztop METRES` | — | — | N evenly spaced levels |
+| `--log-levels N --ztop METRES` | — | — | N levels, thin at the ground and thickening with height |
+| `--zfirst METRES` | no | `50` | thickness of the lowest layer, with `--log-levels` |
+
+`--log-levels 20 --zfirst 20 --ztop 7000` gives the tops (rounded here to whole metres)
+
+```
+20  45  76  116  165  226  303  399  520  671  859  1096  1391  1762
+2225  2805  3531  4439  5577  7000
+```
+
+— eight levels below 500 m, where 20 evenly spaced ones would have given a single 350 m
+layer. That is usually what you want for a footprint run.
+
+To check one coordinate without touching any file:
 
 ```bash
 ./wrfgrid.py /scratch/.../wrfout/ --ll 28.309 -16.499
 # 28.309 N -16.499 E -> x = 59598.6 m, y = 45508.2 m (i = 59.60, j = 45.51, fit 0.1 m)
 ```
 
-Everything after the `NUMPOINT` line is replaced by the new blocks and `NUMPOINT` is set
-to their count, so re-running with different options just rewrites them — no manual
-`head`/`cat`/`sed`. The original is kept as `flexwrf.input.bak` (`--no-backup` to skip
-it), and `-o NEWFILE` writes the result elsewhere and leaves the original alone.
+Nested output grids (`NESTED_OUTPUT`) are not generated — write those by hand.
 
-With no `--start` / `--end` the release period is taken from the simulation beginning
-and ending dates in that same file, with the last release ending exactly at the
-simulation end — releases outside the modelled window are rejected by FLEXPART, and if
-you give dates that fall outside it the script says so. `--every` sets the spacing
-(default 3600 s) and `--duration` the length of one release (default: same as
-`--every`, i.e. back-to-back).
-
-Without `--input` the blocks go to stdout and `NUMPOINT` is yours to set:
-
-```bash
-./generate_releases.py --start "20220508 040000" --end "20220627 000000" \
-    --x1 177000 --y1 98000 --x2 178000 --y2 99000 > releases.txt
-# -> "1196 release blocks -> set NUMPOINT to 1196"   (on stderr)
-```
-
-Coordinate units follow `RELEASE_COORD` in the input file: `0` = WRF grid metres
-(what the numbers above are), `1` = degrees lat/lon.
-
-### 4.4 The output grid
-
-`--outgrid` rebuilds the whole `FORMER OUTGRID FILE` section from the WRF grid named by
-`--wrf`: same origin, same cell size, same extent. The horizontal part is taken from the
-file (`DX`, and the `west_east` / `south_north` dimensions); the **vertical levels are
-yours to choose**:
-
-```bash
-# output on the WRF grid, levels every 250 m up to 7 km
-./generate_releases.py --input flexwrf.input --wrf /scratch/.../wrfout/ \
-    --lat 28.309 --lon -16.499 --outgrid --dz 250 --ztop 7000
-# outgrid: 300 x 186 cells of 1000 m covering 0 .. 300000 m x 0 .. 186000 m of the WRF
-#          grid (300 x 186 points at 1000 m), 28 levels up to 7000 m
-```
-
-Level options — pick one:
-
-| Option | Meaning |
-|---|---|
-| `--levels "250,500,1000,2000,5000"` | exactly these level tops, in metres |
-| `--dz 250 --ztop 7000` | evenly spaced, 250 m thick, up to 7 km |
-| `--nlevels 20 --ztop 5000` | 20 evenly spaced levels up to 5 km |
-| `--log-levels 20 --zfirst 20 --ztop 7000` | 20 levels, thin at the ground and thickening with height |
-
-For a footprint run the near-surface layers are the ones carrying the signal, so even
-spacing wastes levels on the free troposphere. `--log-levels N` gives layers whose
-**thickness** grows by a constant factor: the lowest is `--zfirst` metres thick
-(default 50) and the factor is chosen so the top layer ends exactly at `--ztop`.
-
-```bash
-./generate_releases.py --input flexwrf.input --wrf /scratch/.../wrfout/ \
-    --lat 28.309 --lon -16.499 --outgrid --log-levels 20 --zfirst 20 --ztop 7000
-# log levels: 20 layers from 20 m thick at the ground to 1423 m at the top
-#             (ratio 1.252), reaching 7000 m
-```
-
-which writes the level tops
-
-```
-20.0  45.0  76.4  115.6  164.7  226.1  303.0  399.3  519.8  670.6
-859.4  1095.6  1391.4  1761.6  2224.9  2804.8  3530.7  4439.3  5576.5  7000.0
-```
-
-— eight levels below 500 m, where evenly spaced 350 m layers would have given one. Ask
-for more levels than `--zfirst` can grow into (`--zfirst 200` with 40 levels below
-5 km) and the script says so rather than writing a grid that thins with height.
-
-`--outgrid-res METRES` coarsens the horizontal grid — output every 3 km from a 1 km run
-is `--outgrid-res 3000`, which cuts the output volume ninefold. Anything left over
-because the domain is not a whole number of output cells is reported and dropped from
-the top/right edge.
-
-The grid FLEXPART accepts runs from `0` to `nx*dx`, so the full-domain default is the
-largest legal output grid (`readinput.f90:1086`); `OUTGRID_COORD` is set to `0` to match
-the metres that get written. Nested output grids (`NESTED_OUTPUT`) are not generated —
-write those by hand.
-
-### 4.5 Switches worth understanding
+### 4.4 Switches worth understanding
 
 | Switch | Notes |
 |---|---|
@@ -380,7 +282,7 @@ This looks fatal but **is not** — the `stop` is deliberately commented out in
 modification re-enabled. The message is stale upstream text. The run continues
 normally, and this is the setting the INAR Izaña runs use.
 
-### 4.6 A note on `examples/`
+### 4.5 A note on `examples/`
 
 The files in `examples/` are Brioude's upstream test cases. They are useful as a
 **format reference**, but they will not run against this binary unchanged: they use
@@ -388,7 +290,7 @@ The files in `examples/` are Brioude's upstream test cases. They are useful as a
 `maxageclass = 1` and `maxspec = 1`. Either raise those limits and rebuild
 (section 2), or just read the files for their layout.
 
-### 4.7 Checking an input file without burning a job
+### 4.6 Checking an input file without burning a job
 
 The serial binary parses the whole input and reports the first problem in seconds:
 
@@ -443,9 +345,9 @@ Monitor with `squeue --me`, `seff <jobid>` (efficiency after it finishes) and th
 | `error while loading shared libraries: libnetcdff.so` | The job did not load the build modules. Use the supplied Slurm scripts, or `source roihu_env.sh` first. |
 | `No rule to make target 'xxx.o'` | Something in `OBJECTS` has no source file. See section 8. |
 | `#### FLEXPART MODEL ERROR! ... CANNOT BE OPENED` | A path in lines 2–4 of the input file is wrong, or a directory is missing its trailing slash, or the output directory does not exist. |
-| Same error, but the file name printed is **blank** | The path is longer than the 120-character limit and was truncated. Section 5.1. |
+| Same error, but the file name printed is **blank** | The path is longer than the 120-character limit and was truncated. Section 4.1. |
 | `NUMBER OF AGE CLASSES GREATER THAN MAXIMUM ALLOWED` | `NAGECLASS > maxageclass` — section 2. |
-| `SFC_OPTION = 1 ... no longer supported` | **Not fatal.** Stale message; see section 5.4. |
+| `SFC_OPTION = 1 ... no longer supported` | **Not fatal.** Stale message; see section 4.4. |
 | Job runs but the output directory stays empty | The run has not reached the first output interval yet, or line 2 points somewhere unexpected. Check the `.out` log. |
 | Output full of `NaN` | Very likely uninitialised variables under gcc 15 `-O3` — this bit CHIMERE on the same machine. `-finit-local-zero` is already in the flags for that reason; if NaN still appears, rebuild with the debug flags commented in `makefile.roihu` (`-O0 -g -fbacktrace -ffpe-trap=invalid -finit-real=snan`) and read the backtrace. |
 | Build races with `-j` | `./compile_roihu.sh omp -j 1`. The dependency fixes in `makefile.roihu` should make this unnecessary — please report it if it happens. |
