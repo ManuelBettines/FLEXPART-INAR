@@ -6,13 +6,25 @@ per hour over the whole simulation period, which means hundreds or thousands of 
 identical 12-line blocks. This writes them -- and, with --input, writes them straight
 into the flexwrf.input file you point it at:
 
-    ./generate_releases.py --input flexwrf.input \\
-        --x1 177000 --y1 98000 --x2 178000 --y2 99000 --z1 0 --z2 10 --npart 10000
+    ./generate_releases.py --input flexwrf.input --wrf /scratch/.../wrfout/ \\
+        --lat 28.309 --lon -16.499 --box 1000 --z1 0 --z2 10 --npart 10000
 
-That replaces everything after the NUMPOINT line with the new blocks, sets NUMPOINT to
-their count, and keeps a copy of the original in flexwrf.input.bak. Without --start /
---end the release period is taken from the simulation beginning/ending dates already in
-that file, so the releases always fit inside the modelled window.
+Give the release position in degrees (--lat/--lon, or the corners --lat1/--lon1/
+--lat2/--lon2) and it is converted to the WRF grid metres FLEXPART wants, using the
+XLONG/XLAT fields of the wrfout file named by --wrf. Grid metres (--x1/--y1/--x2/--y2)
+still work if you prefer them.
+
+--outgrid additionally rebuilds the OUTGRID section to match the WRF grid exactly --
+same origin, same cell size, same extent, or a coarser multiple of it with
+--outgrid-res. The vertical levels are yours to choose, with --levels, or --dz/--ztop:
+
+    ./generate_releases.py --input flexwrf.input --wrf /scratch/.../wrfout/ \\
+        --lat 28.309 --lon -16.499 --outgrid --dz 250 --ztop 7000
+
+Everything after the NUMPOINT line is replaced by the new blocks, NUMPOINT is set to
+their count, and the original is kept as flexwrf.input.bak. Without --start / --end the
+release period is taken from the simulation beginning/ending dates already in that
+file, so the releases always fit inside the modelled window.
 
 Without --input the blocks go to stdout (or -o FILE) and NUMPOINT is yours to set:
 
@@ -20,8 +32,8 @@ Without --input the blocks go to stdout (or -o FILE) and NUMPOINT is yours to se
         --x1 177000 --y1 98000 --x2 178000 --y2 99000 > releases.txt
     # -> "1196 release blocks -> set NUMPOINT to 1196" on stderr
 
-Coordinate units follow RELEASE_COORD in flexwrf.input: 0 = WRF grid metres (the
-default here, and what --x1/--y1/--x2/--y2 mean below), 1 = degrees lat/lon.
+Coordinate units follow RELEASE_COORD / OUTGRID_COORD in flexwrf.input: 0 = WRF grid
+metres, 1 = degrees. This script writes metres and sets both switches to 0 for you.
 
 Written for the FLEXPART-WRF setup at INAR / University of Helsinki.
 """
@@ -32,8 +44,16 @@ import shutil
 import sys
 from datetime import datetime, timedelta
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # for wrfgrid.py
+
 NUMPOINT_RE = re.compile(r"^(?P<pre>\s*)(?P<val>\S+)(?P<gap>\s+)(?P<rest>NUMPOINT\b.*)$")
 DATE_RE = re.compile(r"^\s*(\d{8})\s+(\d{6})\b")
+OUTGRID_HEAD_RE = re.compile(r"^=+\s*FORMER OUTGRID FILE\s*=+\s*$", re.I)
+SEPARATOR_RE = re.compile(r"^=====")
+
+
+def keyword_re(word):
+    return re.compile(rf"^(?P<pre>\s*)(?P<val>\S+)(?P<gap>\s+)(?P<rest>{word}\b.*)$")
 
 
 def parse_stamp(text):
@@ -95,17 +115,84 @@ def read_input(path):
     return lines, numpoint, sim_start, sim_end
 
 
-def set_numpoint(line, count):
-    """Replace the value on the NUMPOINT line, keeping the comment column."""
-    m = NUMPOINT_RE.match(line)
+def set_value(line, value, word="NUMPOINT"):
+    """Replace the value on a switch line, keeping the comment column."""
+    m = keyword_re(word).match(line)
     width = len(m.group("val")) + len(m.group("gap"))
-    gap = " " * max(1, width - len(str(count)))
-    return f"{m.group('pre')}{count}{gap}{m.group('rest')}"
+    gap = " " * max(1, width - len(str(value)))
+    return f"{m.group('pre')}{value}{gap}{m.group('rest')}"
+
+
+def set_switch(lines, word, value):
+    """Set a COMMAND switch (RELEASE_COORD, OUTGRID_COORD, ...) if it is not already."""
+    rx = keyword_re(word)
+    for i, line in enumerate(lines):
+        m = rx.match(line)
+        if m:
+            if m.group("val") != str(value):
+                lines[i] = set_value(line, value, word)
+                print(f"{word} was {m.group('val')}, set to {value}", file=sys.stderr)
+            return True
+    print(f"warning: no {word} line found -- check it by hand", file=sys.stderr)
+    return False
+
+
+def outgrid_lines(grid, res, levels):
+    """The FORMER OUTGRID FILE block covering the whole WRF domain."""
+    xmax, ymax = grid.extent_m()
+    numx, numy = int(xmax // res), int(ymax // res)
+    if numx < 1 or numy < 1:
+        raise SystemExit(f"--outgrid-res {res:g} m is larger than the WRF domain")
+    rows = [
+        (0, "OUTLONLEFT", "geograhical longitude of lower left corner of output grid"),
+        (0, "OUTLATLOWER", "geographical latitude of lower left corner of output grid"),
+        (numx, "NUMXGRID", "number of grid points in x direction (= # of cells )"),
+        (numy, "NUMYGRID", "number of grid points in y direction (= # of cells )"),
+        (0, "OUTGRIDDEF", "outgrid defined 0=using grid distance, 1=upperright corner coordinate"),
+        (f"{res:g}", "DXOUTLON", "grid distance in x direction or upper right corner of output grid"),
+        (f"{res:g}", "DYOUTLON", "grid distance in y direction or upper right corner of output grid"),
+        (len(levels), "NUMZGRID", "number of vertical levels"),
+    ]
+    out = [f"  {str(v):<19}{k:<16}{c}" for v, k, c in rows]
+    out += [f"  {z:<19.1f}{'LEVEL':<16}height of level (upper boundary)" for z in levels]
+    print(f"outgrid: {numx} x {numy} cells of {res:g} m covering "
+          f"0 .. {numx * res:.0f} m x 0 .. {numy * res:.0f} m of the WRF grid "
+          f"({grid.nx} x {grid.ny} points at {grid.dx:g} m), "
+          f"{len(levels)} levels up to {levels[-1]:g} m", file=sys.stderr)
+    if numx * res < xmax or numy * res < ymax:
+        print(f"note: {xmax - numx * res:.0f} m in x and {ymax - numy * res:.0f} m in y "
+              f"of the WRF domain are left out (domain not a whole number of output "
+              f"cells)", file=sys.stderr)
+    return out
+
+
+def replace_outgrid(lines, block):
+    """Swap the FORMER OUTGRID FILE section for `block`; returns the new line list."""
+    start = None
+    for i, line in enumerate(lines):
+        if OUTGRID_HEAD_RE.match(line):
+            start = i
+            break
+    if start is None:
+        raise SystemExit("no '=== FORMER OUTGRID FILE ===' section found in the input "
+                         "file, cannot write the output grid")
+    end = next((i for i in range(start + 1, len(lines)) if SEPARATOR_RE.match(lines[i])),
+               None)
+    if end is None:
+        raise SystemExit("the FORMER OUTGRID FILE section has no closing '=====' line")
+    return lines[:start + 1] + block + lines[end:]
+
+
+def find_numpoint(lines):
+    for i, line in enumerate(lines):
+        if NUMPOINT_RE.match(line):
+            return i
+    raise SystemExit("no NUMPOINT line -- is it really a flexwrf.input file?")
 
 
 def write_input(path, out_path, lines, numpoint, blocks, count, backup):
     head = lines[:numpoint + 1]
-    head[numpoint] = set_numpoint(head[numpoint], count)
+    head[numpoint] = set_value(head[numpoint], count)
     text = "\n".join(head) + "\n" + "".join(blocks)
     if out_path is None:
         if backup:
@@ -115,6 +202,89 @@ def write_input(path, out_path, lines, numpoint, blocks, count, backup):
     with open(out_path, "w") as fh:
         fh.write(text)
     return out_path
+
+
+def build_levels(a, ap):
+    """The vertical levels of the output grid, from --levels or --dz/--nlevels."""
+    given = [x is not None for x in (a.levels, a.dz, a.nlevels)]
+    if sum(given) != 1:
+        ap.error("--outgrid needs the vertical resolution: one of --levels, "
+                 "--dz (with --ztop) or --nlevels (with --ztop)")
+    if a.levels:
+        try:
+            levels = [float(v) for v in re.split(r"[,\s]+", a.levels.strip()) if v]
+        except ValueError:
+            ap.error("--levels must be a comma- or space-separated list of heights")
+    else:
+        if a.ztop is None:
+            ap.error("--dz/--nlevels need --ztop, the top of the output grid in metres")
+        if a.dz is not None:
+            if a.dz <= 0:
+                ap.error("--dz must be positive")
+            n = int(round(a.ztop / a.dz))
+            levels = [a.dz * k for k in range(1, n + 1)]
+        else:
+            if a.nlevels < 1:
+                ap.error("--nlevels must be at least 1")
+            levels = [a.ztop * k / a.nlevels for k in range(1, a.nlevels + 1)]
+    if not levels:
+        ap.error("no output levels")
+    if any(b <= x for x, b in zip(levels, levels[1:])) or levels[0] <= 0:
+        ap.error("output levels must be positive and strictly increasing")
+    return levels
+
+
+def resolve_position(a, ap):
+    """Fill a.x1/y1/x2/y2 (grid metres, as strings) from whatever the user gave."""
+    ll_corners = [a.lat1, a.lon1, a.lat2, a.lon2]
+    point = [a.lat, a.lon]
+    if any(v is not None for v in ll_corners) and any(v is not None for v in point):
+        ap.error("give either --lat/--lon or the corners --lat1/--lon1/--lat2/--lon2")
+    if any(v is not None for v in ll_corners) and not all(v is not None for v in ll_corners):
+        ap.error("--lat1, --lon1, --lat2 and --lon2 must all be given together")
+    if (a.lat is None) != (a.lon is None):
+        ap.error("--lat and --lon must be given together")
+    degrees = a.lat is not None or a.lat1 is not None
+    grid = None
+
+    if a.wrf:
+        import wrfgrid
+        grid = wrfgrid.WrfGrid(wrfgrid.find_wrfout(a.wrf))
+        print(grid.describe(), file=sys.stderr)
+        if not grid.is_mother():
+            print(f"warning: {grid.name} is not the mother domain; FLEXPART grid metres "
+                  f"are measured on the FIRST domain, so point --wrf at its d01 file",
+                  file=sys.stderr)
+    elif degrees or a.outgrid:
+        ap.error("--wrf is required to turn degrees into grid metres and to build the "
+                 "output grid: give the wrfout file (or its directory)")
+
+    if degrees:
+        if a.lat is not None:                       # centre point + box size
+            half = a.box / 2.0
+            x, y, err = grid.ll_to_xymeter(a.lon, a.lat)
+            corners = [(x - half, y - half), (x + half, y + half)]
+            print(f"release centre {a.lat} N {a.lon} E -> x = {x:.1f} m, y = {y:.1f} m "
+                  f"(grid fit {err:.1f} m), box {a.box:g} m", file=sys.stderr)
+        else:                                       # two corners
+            x1, y1, e1 = grid.ll_to_xymeter(a.lon1, a.lat1)
+            x2, y2, e2 = grid.ll_to_xymeter(a.lon2, a.lat2)
+            corners = [(min(x1, x2), min(y1, y2)), (max(x1, x2), max(y1, y2))]
+            print(f"release box {a.lat1} N {a.lon1} E .. {a.lat2} N {a.lon2} E -> "
+                  f"x {corners[0][0]:.1f} .. {corners[1][0]:.1f} m, "
+                  f"y {corners[0][1]:.1f} .. {corners[1][1]:.1f} m "
+                  f"(grid fit {max(e1, e2):.1f} m)", file=sys.stderr)
+        (a.x1, a.y1), (a.x2, a.y2) = [(f"{v:.1f}" for v in c) for c in corners]
+
+    if grid is not None:
+        xmax, ymax = grid.extent_m()
+        for label, value, limit in (("x", a.x1, xmax), ("x", a.x2, xmax),
+                                    ("y", a.y1, ymax), ("y", a.y2, ymax)):
+            v = float(value)
+            if v < 0 or v > limit:
+                print(f"warning: release {label} = {v:.1f} m is outside the domain "
+                      f"(0 .. {limit:.0f} m); FLEXPART will stop", file=sys.stderr)
+    return grid
 
 
 # ---------------------------------------------------------------------- driver
@@ -140,10 +310,45 @@ def main(argv=None):
     ap.add_argument("--duration", type=int, default=None,
                     help="length of one release in seconds (default: same as --every, "
                          "i.e. back-to-back releases with no gap)")
-    ap.add_argument("--x1", default="98000", help="XPOINT1, lower-left x")
-    ap.add_argument("--y1", default="177000", help="YPOINT1, lower-left y")
-    ap.add_argument("--x2", default="99000", help="XPOINT2, upper-right x")
-    ap.add_argument("--y2", default="178000", help="YPOINT2, upper-right y")
+    ap.add_argument("--wrf", metavar="PATH",
+                    help="wrfout file (or the directory holding them; the lowest "
+                         "domain is used) whose grid degrees are converted against, "
+                         "and which --outgrid is built from")
+    pos = ap.add_argument_group(
+        "release position",
+        "in degrees (--lat/--lon or the four corner options, needs --wrf) or "
+        "directly in WRF grid metres (--x1/--y1/--x2/--y2)")
+    pos.add_argument("--lat", type=float, help="latitude of the release centre [deg]")
+    pos.add_argument("--lon", type=float, help="longitude of the release centre [deg]")
+    pos.add_argument("--box", type=float, default=1000.0, metavar="METRES",
+                     help="side of the release box around --lat/--lon "
+                          "(default: 1000 m)")
+    pos.add_argument("--lat1", type=float, help="latitude of the lower-left corner")
+    pos.add_argument("--lon1", type=float, help="longitude of the lower-left corner")
+    pos.add_argument("--lat2", type=float, help="latitude of the upper-right corner")
+    pos.add_argument("--lon2", type=float, help="longitude of the upper-right corner")
+    pos.add_argument("--x1", default="98000", help="XPOINT1, lower-left x [grid m]")
+    pos.add_argument("--y1", default="177000", help="YPOINT1, lower-left y [grid m]")
+    pos.add_argument("--x2", default="99000", help="XPOINT2, upper-right x [grid m]")
+    pos.add_argument("--y2", default="178000", help="YPOINT2, upper-right y [grid m]")
+    og = ap.add_argument_group(
+        "output grid",
+        "with --outgrid the OUTGRID section is rebuilt from the WRF grid named by "
+        "--wrf; the vertical levels are yours to choose")
+    og.add_argument("--outgrid", action="store_true",
+                    help="rewrite the OUTGRID section to cover the WRF domain "
+                         "(needs --input and --wrf)")
+    og.add_argument("--outgrid-res", type=float, metavar="METRES",
+                    help="output cell size (default: the WRF dx; use a multiple of it "
+                         "for a coarser grid)")
+    og.add_argument("--levels", metavar="LIST",
+                    help="output level tops in metres, e.g. \"250,500,1000,2000\"")
+    og.add_argument("--dz", type=float, metavar="METRES",
+                    help="evenly spaced levels of this thickness, up to --ztop")
+    og.add_argument("--nlevels", type=int, metavar="N",
+                    help="N evenly spaced levels up to --ztop")
+    og.add_argument("--ztop", type=float, metavar="METRES",
+                    help="top of the output grid, for --dz / --nlevels")
     ap.add_argument("--kindz", type=int, default=1, choices=(1, 2, 3),
                     help="1 = m above ground, 2 = m above sea level, 3 = pressure")
     ap.add_argument("--z1", type=float, default=0.0, help="ZPOINT1, lower z-level")
@@ -166,7 +371,14 @@ def main(argv=None):
 
     if a.every <= 0:
         ap.error("--every must be positive")
+    if a.outgrid and not a.input:
+        ap.error("--outgrid rewrites the OUTGRID section, so it needs --input")
+    if a.box <= 0:
+        ap.error("--box must be positive")
     duration = timedelta(seconds=a.duration if a.duration is not None else a.every)
+
+    levels = build_levels(a, ap) if a.outgrid else None
+    grid = resolve_position(a, ap)
 
     lines = numpoint = sim_start = sim_end = None
     if a.input:
@@ -213,6 +425,14 @@ def main(argv=None):
               file=sys.stderr)
 
     if a.input:
+        if a.outgrid:
+            res = a.outgrid_res or grid.dx
+            if res <= 0:
+                ap.error("--outgrid-res must be positive")
+            lines = replace_outgrid(lines, outgrid_lines(grid, res, levels))
+            set_switch(lines, "OUTGRID_COORD", 0)
+            numpoint = find_numpoint(lines)
+        set_switch(lines, "RELEASE_COORD", 0)
         written = write_input(a.input, a.output, lines, numpoint, blocks,
                               len(blocks), not a.no_backup)
         print(f"{len(blocks)} release blocks, {start:%Y%m%d %H%M%S} -> "

@@ -199,6 +199,26 @@ and warns about the things that only bite mid-run otherwise: irregular spacing (
 missing wrfout file), the same time step present in two files (it keeps one, since
 FLEXPART requires strictly increasing times), and more than `maxwf` rows.
 
+**Getting steps you did not expect (10 min, 30 min...)?** That is what is really in
+your files. The script no longer assumes an interval, it reads each file's `Times`
+variable, so a WRF run with `history_interval = 10` gives 144 rows a day. FLEXPART will
+happily use them, but it then reads six times as many wind fields as an hourly run.
+Check what you have and thin it if you want:
+
+```bash
+ncdump -v Times /scratch/.../wrfout_d01_2022-03-21_00:00:00 | tail -20
+
+# drive FLEXPART with hourly wind fields even though WRF wrote every 10 minutes
+./generate_available.py /scratch/.../wrfout/ --every 3600
+```
+
+`--every` must be a whole multiple of the spacing actually present, and the script says
+so if it is not. Keeping the native interval is fine too — just mind that `LSYNCTIME`
+must stay below half of `idiffnorm` (10800 s, `par_mod.f90:104`).
+
+With nests, all domains must have **identical** time steps or FLEXPART stops
+(`readinput.f90:915`); the script compares them and warns before you queue the job.
+
 Frames are read with the python `netCDF4` module, falling back to the `ncdump` command
 line tool. If neither is available on the node, `--from-names` takes one frame per file
 from the file name instead, and `--assume-interval SECONDS` fills in the frames between
@@ -216,17 +236,39 @@ of `flexwrf.input`, and mind the 120-character path limit.
 
 A backward run usually releases from the same box every hour, which means hundreds to
 thousands of near-identical 12-line blocks. `generate_releases.py` writes them straight
-into the `flexwrf.input` you name:
+into the `flexwrf.input` you name, and takes the release position in **degrees**:
 
 ```bash
-./generate_releases.py --input flexwrf.input \
-    --x1 177000 --y1 98000 --x2 178000 --y2 99000 \
+./generate_releases.py --input flexwrf.input --wrf /scratch/.../wrfout/ \
+    --lat 28.309 --lon -16.499 --box 1000 \
     --z1 0 --z2 10 --npart 10000
+# wrfout_d01_...: 300 x 186 points, dx = 1000 m, dy = 1000 m, MAP_PROJ = 1, corners ...
+# release centre 28.309 N -16.499 E -> x = 59598.6 m, y = 45508.2 m (grid fit 0.1 m), box 1000 m
 # flexwrf.input: simulation 2022-05-08 04:00 -> 2022-06-27 00:00
 # --start not given, using the simulation start 20220508 040000
 # --end not given, no release starts after 20220626 230000 so the last one ends by the simulation end 20220627 000000
 # backed up flexwrf.input -> flexwrf.input.bak
 # 1196 release blocks, 20220508 040000 -> 20220627 000000; NUMPOINT set to 1196
+```
+
+`--lat/--lon` is the centre of the release box and `--box` its side in metres; give the
+corners instead with `--lat1/--lon1/--lat2/--lon2`, or skip the conversion entirely and
+pass grid metres as before with `--x1/--y1/--x2/--y2`.
+
+The conversion needs `--wrf`: a wrfout file, or the directory holding them, in which
+case the **lowest-numbered domain** is used. That matters — FLEXPART grid metres are
+`x = dx * i` with `i` a zero-based index **on the mother domain** (`map_proj_wrf.f90:606`,
+`xmet0 = 0` in `gridcheck.f90:145`), so pointing at a `d02` file would put your release
+in the wrong place; the script warns if you do. Rather than reimplementing WRF's map
+projections, the inverse is computed from the file's own `XLONG`/`XLAT` fields (nearest
+point plus one Newton step), and the round-trip error is printed — expect a few tens of
+centimetres. `RELEASE_COORD` is set to `0` for you, since what gets written is metres.
+
+To check a single coordinate without touching any input file:
+
+```bash
+./wrfgrid.py /scratch/.../wrfout/ --ll 28.309 -16.499
+# 28.309 N -16.499 E -> x = 59598.6 m, y = 45508.2 m (i = 59.60, j = 45.51, fit 0.1 m)
 ```
 
 Everything after the `NUMPOINT` line is replaced by the new blocks and `NUMPOINT` is set
@@ -252,7 +294,40 @@ Without `--input` the blocks go to stdout and `NUMPOINT` is yours to set:
 Coordinate units follow `RELEASE_COORD` in the input file: `0` = WRF grid metres
 (what the numbers above are), `1` = degrees lat/lon.
 
-### 4.4 Switches worth understanding
+### 4.4 The output grid
+
+`--outgrid` rebuilds the whole `FORMER OUTGRID FILE` section from the WRF grid named by
+`--wrf`: same origin, same cell size, same extent. The horizontal part is taken from the
+file (`DX`, and the `west_east` / `south_north` dimensions); the **vertical levels are
+yours to choose**:
+
+```bash
+# output on the WRF grid, levels every 250 m up to 7 km
+./generate_releases.py --input flexwrf.input --wrf /scratch/.../wrfout/ \
+    --lat 28.309 --lon -16.499 --outgrid --dz 250 --ztop 7000
+# outgrid: 300 x 186 cells of 1000 m covering 0 .. 300000 m x 0 .. 186000 m of the WRF
+#          grid (300 x 186 points at 1000 m), 28 levels up to 7000 m
+```
+
+Level options — pick one:
+
+| Option | Meaning |
+|---|---|
+| `--levels "250,500,1000,2000,5000"` | exactly these level tops, in metres |
+| `--dz 250 --ztop 7000` | evenly spaced, 250 m thick, up to 7 km |
+| `--nlevels 20 --ztop 5000` | 20 evenly spaced levels up to 5 km |
+
+`--outgrid-res METRES` coarsens the horizontal grid — output every 3 km from a 1 km run
+is `--outgrid-res 3000`, which cuts the output volume ninefold. Anything left over
+because the domain is not a whole number of output cells is reported and dropped from
+the top/right edge.
+
+The grid FLEXPART accepts runs from `0` to `nx*dx`, so the full-domain default is the
+largest legal output grid (`readinput.f90:1086`); `OUTGRID_COORD` is set to `0` to match
+the metres that get written. Nested output grids (`NESTED_OUTPUT`) are not generated —
+write those by hand.
+
+### 4.5 Switches worth understanding
 
 | Switch | Notes |
 |---|---|
@@ -281,7 +356,7 @@ This looks fatal but **is not** — the `stop` is deliberately commented out in
 modification re-enabled. The message is stale upstream text. The run continues
 normally, and this is the setting the INAR Izaña runs use.
 
-### 4.5 A note on `examples/`
+### 4.6 A note on `examples/`
 
 The files in `examples/` are Brioude's upstream test cases. They are useful as a
 **format reference**, but they will not run against this binary unchanged: they use
@@ -289,7 +364,7 @@ The files in `examples/` are Brioude's upstream test cases. They are useful as a
 `maxageclass = 1` and `maxspec = 1`. Either raise those limits and rebuild
 (section 2), or just read the files for their layout.
 
-### 4.6 Checking an input file without burning a job
+### 4.7 Checking an input file without burning a job
 
 The serial binary parses the whole input and reports the first problem in seconds:
 

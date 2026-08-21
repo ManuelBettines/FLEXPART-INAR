@@ -188,6 +188,26 @@ def expand_from_names(rows, interval):
     return out
 
 
+def thin(rows, every, domain):
+    """Keep one step every `every` seconds, counted from the first one."""
+    native = Counter((rows[i + 1][0] - rows[i][0]).total_seconds()
+                     for i in range(len(rows) - 1)).most_common(1)[0][0]
+    if every % native != 0:
+        raise SystemExit(
+            f"d{domain:02d}: the frames are {fmt_seconds(native)} apart, so --every "
+            f"{fmt_seconds(every)} cannot be taken from them -- use a whole multiple "
+            f"of {fmt_seconds(native)}")
+    t0 = rows[0][0]
+    kept = [r for r in rows if (r[0] - t0).total_seconds() % every == 0]
+    if len(kept) < 2:
+        raise SystemExit(
+            f"d{domain:02d}: --every {fmt_seconds(every)} leaves only {len(kept)} "
+            f"time step(s) -- the period is too short for it")
+    print(f"d{domain:02d}: --every {fmt_seconds(every)} keeps {len(kept)} of "
+          f"{len(rows)} time steps", file=sys.stderr)
+    return kept
+
+
 def dedupe(rows, domain):
     """FLEXPART needs strictly increasing times; keep the first file for each."""
     out, dropped = [], 0
@@ -225,6 +245,32 @@ def describe(rows, domain):
               file=sys.stderr)
 
 
+def check_nests(prepared):
+    """FLEXPART stops unless every nest has exactly the mother's time steps
+    (readinput.f90:915) -- say so here rather than 50 minutes into the run."""
+    if len(prepared) < 2:
+        return
+    mother, rows0 = prepared[0]
+    times0 = [t for t, _ in rows0]
+    for domain, rows in prepared[1:]:
+        times = [t for t, _ in rows]
+        if times == times0:
+            continue
+        missing = sorted(set(times0) - set(times))
+        extra = sorted(set(times) - set(times0))
+        print(f"warning: d{domain:02d} has {len(times)} time steps but the mother "
+              f"domain d{mother:02d} has {len(times0)}; FLEXPART requires them to be "
+              f"identical and will stop.", file=sys.stderr)
+        if missing:
+            print(f"         d{domain:02d} is missing e.g. {missing[0]:%Y-%m-%d %H:%M}",
+                  file=sys.stderr)
+        if extra:
+            print(f"         d{domain:02d} has extra e.g. {extra[0]:%Y-%m-%d %H:%M}",
+                  file=sys.stderr)
+        print(f"         fix the WRF output, or thin both with --every",
+              file=sys.stderr)
+
+
 def fmt_seconds(sec):
     sec = int(sec)
     if sec % 3600 == 0:
@@ -259,6 +305,10 @@ def main(argv=None):
     ap.add_argument("--end", type=parse_stamp,
                     help="drop time steps after this; a bare date means 00:00:00 of "
                          "that day, so give 'YYYYMMDD 230000' to keep the whole day")
+    ap.add_argument("--every", type=int, metavar="SECONDS",
+                    help="use only every SECONDS of the frames present, e.g. 3600 to "
+                         "drive FLEXPART with hourly wind fields when WRF wrote every "
+                         "10 min (must be a multiple of the frame spacing)")
     ap.add_argument("--from-names", action="store_true",
                     help="do not open the files; take one time frame per file from "
                          "its name (see --assume-interval)")
@@ -280,6 +330,8 @@ def main(argv=None):
         ap.error("--end is before --start")
     if args.assume_interval is not None and args.assume_interval <= 0:
         ap.error("--assume-interval must be positive")
+    if args.every is not None and args.every <= 0:
+        ap.error("--every must be positive")
 
     files = collect_files(args.paths, args.pattern)
     if not files:
@@ -306,7 +358,8 @@ def main(argv=None):
     if args.output and args.output != "-" and len(domains) > 1:
         ap.error("-o/--output needs a single domain; use --domain or --outdir")
 
-    for n, domain in enumerate(domains, start=1):
+    prepared = []
+    for domain in domains:
         rows = per_domain[domain]
         if args.from_names:
             rows = expand_from_names(rows, args.assume_interval)
@@ -319,8 +372,14 @@ def main(argv=None):
             print(f"warning: d{domain:02d}: no time steps left after --start/--end",
                   file=sys.stderr)
             continue
+        if args.every:
+            rows = thin(rows, args.every, domain)
         describe(rows, domain)
+        prepared.append((domain, rows))
 
+    check_nests(prepared)
+
+    for n, (domain, rows) in enumerate(prepared, start=1):
         text = render(rows, header=not args.no_header)
         if args.output == "-":
             sys.stdout.write(text)
