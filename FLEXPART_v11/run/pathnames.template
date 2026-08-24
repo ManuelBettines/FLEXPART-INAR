@@ -1,0 +1,26 @@
+options/
+/scratch/project_XXXXXXX/<user>/FLEXPART/output/<case>/
+/scratch/project_XXXXXXX/<user>/FLEXPART/ERA5/<case>/
+AVAILABLE
+============================================
+!
+! FLEXPART v11 'pathnames' — four lines, read in this exact order by readpaths
+! (src/readoptions_mod.f90:1861). Everything from the '=====' line down is ignored,
+! so these notes are safe to keep.
+!
+!   line 1  the options directory (COMMAND, RELEASES, OUTGRID, SPECIES/, ...)
+!   line 2  the output directory  — FLEXPART does NOT create it; the run script does
+!   line 3  the directory holding the GRIB files from flex_extract
+!   line 4  the AVAILABLE file
+!
+! The first three MUST end in '/'. FLEXPART pads a missing one and prints
+!   'WARNING: path not ending in /'  ...  'fix: padded with /'
+! but a path is truncated at its first blank, so a directory name with a space in it
+! silently becomes something else. Avoid spaces.
+!
+! Line 4 is a file, not a directory: no trailing slash. It may be relative to the
+! directory you launch FLEXPART from, like everything else here.
+!
+! For nested meteorological input, add TWO more lines per nest after the '====='
+! separator (nest met directory, then nest AVAILABLE) and move the separator to the
+! end — up to maxnests = 5 (par_mod.f90:151).

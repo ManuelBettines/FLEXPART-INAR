@@ -28,6 +28,60 @@ Roihu. Start there.
 The two model versions have **different input file formats and different output
 formats**; they are not drop-in replacements for each other.
 
+### The same shape in every folder
+
+Each of the three folders is laid out the same way, so what you learn in one carries
+over:
+
+| File | What it does |
+|---|---|
+| `roihu_env.sh` | the module stack. **Sourced** by the build and the run scripts, so the two can never drift apart. Never run it |
+| `compile_roihu.sh` / `setup_roihu.sh` | one command, no modules to load first, a build summary at the end |
+| `makefile.roihu` / `makefile_roihu` | the Roihu-adapted makefile; every change from upstream is marked `# ROIHU:` |
+| `run/` (or `Run/`) | templates, the generators that fill them in, and the Slurm scripts |
+| `local_reference/` | your own namelists, logs and old binaries. Git-ignored, never pushed |
+| `README.md` | compile, prepare, submit, troubleshoot |
+
+Nothing hard-codes a CSC project number: pass it as `sbatch --account=project_XXXXXXX`,
+or export `SBATCH_ACCOUNT` once in your `~/.bashrc`.
+
+### A typical ECMWF-driven run, end to end
+
+```bash
+# 1. retrieve the meteorology (hours to days — it queues at ECMWF)
+cd FLEX_EXTRACT && ./setup_roihu.sh
+cd Run && sbatch --account=project_XXXXXXX run_flex_extract.slurm CONTROL_EA5.MyCase
+
+# 2. build the model (minutes, on the login node)
+cd ../../FLEXPART_v11 && ./compile_roihu.sh
+
+# 3. set the case up on /scratch
+mkdir -p /scratch/project_XXXXXXX/$USER/FLEXPART/mycase
+cd       /scratch/project_XXXXXXX/$USER/FLEXPART/mycase
+cp -r /projappl/.../FLEXPART_v11/options .
+cp    /projappl/.../FLEXPART_v11/run/* .
+mv    pathnames.template pathnames        # then edit its four lines
+
+./generate_available.py /scratch/project_XXXXXXX/$USER/FLEXPART/ERA5/MyCase/
+./generate_releases.py --command options/COMMAND -o options/RELEASES \
+     --control /projappl/.../FLEX_EXTRACT/Run/Control/CONTROL_EA5.MyCase \
+     --lat 60.2 --lon 24.96 --box 10 --npart 20000 --outgrid options/OUTGRID \
+     --log-levels 20 --ztop 20000
+
+# 4. run
+sbatch --account=project_XXXXXXX run_flexpart.slurm
+```
+
+Two couplings between the folders are easy to miss, and both are documented in the
+folder READMEs:
+
+- **`RRINT` (CONTROL) ↔ `numpf` (`par_mod.f90`)** — the number of precipitation fields
+  the retrieval writes and the number FLEXPART is compiled to read must agree. Both
+  are set to the "new" scheme here (`RRINT 1`, `numpf=3`).
+- **the retrieved domain ↔ the release box and output grid** — everything FLEXPART
+  does must fit inside `LEFT`/`RIGHT`/`LOWER`/`UPPER`. `generate_releases.py --control`
+  checks it for you.
+
 ---
 
 ## Getting the code on Roihu
@@ -90,6 +144,15 @@ licenses, stated in their headers:
 | `mt_stream.f90`, `gf2xe.f90`, `mt_kind_defs.f90` | K.-I. Ishikawa, Mersenne Twister | 3-clause BSD |
 | `ranlux.f90` | F. James, CERN | see header |
 | `map_proj_wrf_subaa.f90` | NOAA/OAR/FSL | public domain, open-source disclaimer |
+
+`FLEXPART_v11/src/` is FLEXPART 11, GPLv3-or-later (`SPDX-License-Identifier:
+GPL-3.0-or-later` in the file headers), with the INAR modifications described in
+[`FLEXPART_v11/README.md`](FLEXPART_v11/README.md) section 1; the upstream version of
+each modified file is kept beside it as `*.f90_original`.
+
+`FLEX_EXTRACT/` is a different licence: © 2014–2020 Anne Philipp, Leopold Haimberger
+and Petra Seibert under **CC-BY-4.0** (`FLEX_EXTRACT/LICENSE.md`), except the Fortran
+sources under `FLEX_EXTRACT/Source/Fortran/`, which are GPL-2.0.
 
 Citing the papers below is an academic courtesy, not a license condition — but please do it.
 

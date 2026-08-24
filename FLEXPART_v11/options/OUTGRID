@@ -1,0 +1,29 @@
+!*******************************************************************************
+!                                                                              !
+!      Input file for the Lagrangian particle dispersion model FLEXPART        !
+!                       Please specify your output grid                        !
+!                                                                              !
+! OUTLON0 / OUTLAT0  lower left corner of the output grid, in degrees          !
+! NUMXGRID/NUMYGRID  number of grid CELLS (not points, whatever older copies    !
+!                    of this file claim): the grid spans OUTLON0 ..            !
+!                    OUTLON0 + NUMXGRID*DXOUT, and the same in y               !
+! DXOUT / DYOUT      cell size in degrees                                      !
+! OUTHEIGHTS         UPPER boundaries of the layers, metres above ground       !
+!                                                                              !
+! The whole grid must lie inside the meteorological domain that flex_extract    !
+! retrieved (CONTROL: LEFT/RIGHT/LOWER/UPPER), or FLEXPART stops with           !
+!   #### PART OF OUTPUT GRID IS OUTSIDE MODEL DOMAIN ####                       !
+!                                                                              !
+! run/generate_releases.py --outgrid writes this file for you and checks it     !
+! against a CONTROL file.                                                       !
+!*******************************************************************************
+&OUTGRID
+
+ OUTLON0=      0.0000,
+ OUTLAT0=    -90.0000,
+ NUMXGRID=        360,
+ NUMYGRID=        180,
+ DXOUT=       1.00000,
+ DYOUT=       1.00000,
+ OUTHEIGHTS= 100., 500., 1000., 2000., 5000., 10000., 20000.
+ /

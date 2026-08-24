@@ -14,22 +14,49 @@ flexwrf*_mpi
 flexwrf*_omp
 flexwrf*_serial
 
+# FLEXPART v11 executables (the four flavours, plus the --debug/--serial variants)
+FLEXPART
+FLEXPART_BIN
+FLEXPART_ETA
+FLEXPART_ETA_BIN
+FLEXPART*_dbg
+FLEXPART*_serial
+
+# flex_extract's Fortran executable
+calc_etadot
+calc_etadot*.out
+
 # ---- run-time output and logs --------------------------------------------
 slurm-*.out
 flexwrf_*.out
 flexwrf_*.err
+flexpart_*.out
+flexpart_*.err
+flex_extract_*.out
+flex_extract_*.err
 compile_*.log
 *.log
+FLEX_EXTRACT/Run/logs/
+mars_requests.csv
 
 # ---- generated / user-specific namelists ---------------------------------
 # Real namelists are large (a backward run with hourly releases is ~1 MB of
 # RELEASES blocks) and specific to one case. Commit templates + the generators
-# in WRF-FLEXPART/run/ instead, and keep the generated files locally.
+# in WRF-FLEXPART/run/ and FLEXPART_v11/run/ instead, and keep the generated
+# files in the case directory on /scratch.
 flexinput.*
+AVAILABLE
 AVAILABLE[0-9]*
 flexwrf.input
+pathnames
+*.bak
 !*/run/AVAILABLE.template
 !*/run/flexwrf.input.template
+!*/run/pathnames.template
+
+# flex_extract: submit_chain.sh writes one CONTROL copy per chunk, named
+# CONTROL_<stem>.<YYYYMMDD>. Those are generated; the base CONTROL files are not.
+FLEX_EXTRACT/Run/Control/CONTROL_*.[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]
 # upstream example inputs are small and ARE tracked
 !*/examples/**
 

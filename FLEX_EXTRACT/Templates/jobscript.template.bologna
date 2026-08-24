@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# ON ECS or HPC:
+# start with ecaccess-job-submit -queueName <QUEUE_NAME> <NAME_OF_THIS_FILE>  on gateway server
+# start with sbatch <NAME_OF_THIS_FILE> directly on machine
+
+#SBATCH --chdir=/scratch/$username
+#SBATCH --qos=el
+#SBATCH --job-name=flex_extract
+#SBATCH --output=flex_extract.%j.out
+#SBATCH --error=flex_extract.%j.out
+#SBATCH --mail-type=FAIL
+#SBATCH --mail-user=$username
+#SBATCH --time=24:00:00
+## job output is in .ecaccess_DO_NOT_REMOVE
+
+set -x
+export VERSION=$version_number
+case $$$${EC_CLUSTER} in
+  *ecs*)
+  module purge
+  module load prgenv/gnu gcc/8.5.0
+  module load python3
+  # need eccodes 2.35.0, because of changes in the tables
+  module load ecmwf-toolbox/2024.04.0.0
+  module load ecaccess
+  export PATH=$$$${PATH}:$fp_root_path
+  ;;
+  *hpc*)
+  module purge
+  module load prgenv/gnu gcc/8.5.0
+  module load python3
+  # need eccodes 2.35.0, because of changes in the tables
+  module load ecmwf-toolbox/2024.04.0.0
+  module load ecaccess
+  export SCRATCH=$$$${TMPDIR}
+  export PATH=$$$${PATH}:$fp_root_path
+  ;;
+esac
+
+cd $$$${SCRATCH}
+mkdir -p extract$$$$$$$$
+cd extract$$$$$$$$
+
+export CONTROL=CONTROL
+
+cat >$$$${CONTROL}<<EOF
+$$control_content
+EOF
+
+
+submit.py --controlfile=$$$${CONTROL} --inputdir=./work --outputdir=./work 1> prot 2>&1
+
+if [ $? -eq 0 ] ; then
+  l=0
+  for muser in `grep -i MAILOPS $$$${CONTROL}`; do
+      if [ $$$${l} -gt 0 ] ; then 
+         mail -s flex.$$$${HOST}.$$$$$$$$ $$$${muser} <prot
+         sleep 1
+      fi
+      l=$(($$$${l}+1))
+  done
+else
+  l=0
+  for muser in `grep -i MAILFAIL $$$${CONTROL}`; do
+      if [ $$$${l} -gt 0 ] ; then 
+         mail -s "ERROR! flex.$$$${HOST}.$$$$$$$$" $$$${muser} <prot
+         sleep 1
+      fi
+      l=$(($$$${l}+1))
+  done
+fi
+

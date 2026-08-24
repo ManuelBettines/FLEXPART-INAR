@@ -1,0 +1,32 @@
+***************************************************************************************************************
+*                                                                                                             *
+*   FLEXPART v11 RELEASES — template. Replace it with the output of                                           *
+*   run/generate_releases.py rather than editing hundreds of blocks by hand:                                  *
+*                                                                                                             *
+*     ../run/generate_releases.py --command COMMAND -o RELEASES \                                             *
+*         --lat 60.20 --lon 24.96 --box 10 --z1 0 --z2 100 --npart 20000 --every 3600                         *
+*                                                                                                             *
+*   Every release must lie inside the period given in COMMAND (IBDATE/IBTIME to                               *
+*   IEDATE/IETIME) — in BOTH directions, forward and backward.                                                *
+*                                                                                                             *
+***************************************************************************************************************
+&RELEASES_CTRL
+ NSPEC      =           1, ! Total number of species released
+ SPECNUM_REL=          24, ! Species number(s), i.e. the NNN of SPECIES/SPECIES_NNN (24 = AIRTRACER)
+ /
+&RELEASE
+ IDATE1  =       20180101, ! Release start date, YYYYMMDD
+ ITIME1  =         000000, ! Release start time in UTC, HHMISS
+ IDATE2  =       20180101, ! Release end date
+ ITIME2  =         010000, ! Release end time
+ LON1    =       24.86000, ! Left (west) longitude of the release box
+ LON2    =       25.06000, ! Right (east) longitude of the release box
+ LAT1    =       60.15000, ! Lower (south) latitude of the release box
+ LAT2    =       60.25000, ! Upper (north) latitude of the release box
+ Z1      =          0.000, ! Lower height of the release box
+ Z2      =        100.000, ! Upper height of the release box
+ ZKIND   =              1, ! Reference level: 1 = m above ground, 2 = m above sea level, 3 = pressure (hPa)
+ MASS    =     1.0000E+00, ! Total mass emitted, one value per species (irrelevant for backward runs)
+ PARTS   =          20000, ! Number of particles released; must be > 0
+ COMMENT =     "release1", ! Comment, at most 40 characters
+ /

@@ -1,0 +1,61 @@
+###############################################################################
+#
+# Makefile for flex_extract, Fortran code to calculate etadot
+# Makefile created using by mkmf 19.3.0
+#
+# Copyright: Leopold Haimberger, Petra Seibert
+# SPDX-License-Identifier: GPL-2.0 
+# 
+# Version for a machine with eccodes and emoslib installed on standard paths
+# with optimisation
+#
+# 2022-07-21 Anne Tipka
+#   Updated makefile to make use of the files for fft and get rid of emoslib
+#
+###############################################################################
+
+
+EXE      =  calc_etadot_fast.out
+
+LIB     =  $(ECCODES_LIB)    
+INC = -I. $(ECCODES_INCLUDE)
+
+FC=gfortran  
+
+OPT = -O3 -march=native
+FFLAGS =   $(OPT) $(LIB) $(INC) -fdefault-real-8 -fopenmp -fconvert=big-endian 
+LDFLAGS =  $(OPT) $(LIB) -fopenmp
+SRC = ./rwgrib2.f90 ./calc_etadot.f90 ./ftrafo.f90 ./grphreal.f90 ./posnam.f90 ./phgrreal.f90 ./set99.f90 ./fft99.f90 ./qpassm.f90 ./rpassm.f90 ./jsppole.f90
+OBJ = rwgrib2.o calc_etadot.o ftrafo.o grphreal.o posnam.o phgrreal.o set99.o fft99.o qpassm.o rpassm.o jsppole.o
+MOD = ftrafo.mod  grtoph.mod	phtogr.mod  rwgrib2.mod
+
+all: ${EXE}
+jsppole.o: ./jsppole.f90 
+	$(FC)  $(FFLAGS)  -c	./jsppole.f90
+qpassm.o: ./qpassm.f90
+	$(FC)  $(FFLAGS)  -c	./qpassm.f90
+rpassm.o: ./rpassm.f90
+	$(FC)  $(FFLAGS)  -c	./rpassm.f90
+set99.o: ./set99.f90
+	$(FC)  $(FFLAGS)  -c	./set99.f90
+fft99.o: ./fft99.f90
+	$(FC)  $(FFLAGS)  -c	./fft99.f90
+ftrafo.o: ./ftrafo.f90 phgrreal.o
+	$(FC)  $(FFLAGS)  -c	./ftrafo.f90
+grphreal.o: ./grphreal.f90 phgrreal.o fft99.o
+	$(FC)  $(FFLAGS)  -c	./grphreal.f90
+phgrreal.o: ./phgrreal.f90 fft99.o
+	$(FC)  $(FFLAGS)  -c	./phgrreal.f90
+posnam.o: ./posnam.f90
+	$(FC)  $(FFLAGS)  -c	./posnam.f90
+calc_etadot.o: ./calc_etadot.f90 phgrreal.o grphreal.o ftrafo.o rwgrib2.o jsppole.o set99.o
+	$(FC)  $(FFLAGS)  -c	./calc_etadot.f90
+rwgrib2.o: ./rwgrib2.f90
+	$(FC)  $(FFLAGS)  -c	./rwgrib2.f90
+
+clean: 
+	-rm -f $(OBJ) ${EXE} $(MOD) calc_etadot
+
+${EXE}: $(OBJ)
+	$(FC) $(OBJ) -o ${EXE}  $(LDFLAGS)
+	ln -sf ${EXE} calc_etadot

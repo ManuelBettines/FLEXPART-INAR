@@ -1,0 +1,34 @@
+2019-08-19 PS
+rwGRIB2.f90 subroutine readlatlon: check alloc status deallocate values
+  - in case of empty input file 
+  NOTE: check why we run into that at all!
+  Improve by realloc only if dim has changed
+
+2019-08-21 PS
+  introduce the "new" versions of source files: 
+    all .f90 free format
+    code beautification
+    regression test is OK
+  
+   make new local gfortran makefiles, remove parameters not needed anymore
+   
+   change filenames rwgrib.f90 (all lower), preconvert to calc_etadot,
+   adapt messages and comments in calc_etadot.f90
+   adapt all makefiles to new filenames
+   adapt success message of logfiles in regression test references
+   redo regression test OK
+   
+   provide softlinks for standards:
+     calc_etadot.out -> calc_etadot_fast.out
+     makefile_local_gfortran -> makefile_fast
+   
+2022-07-21 AT
+   solved issue with emoslib!
+   see ticket #312 on flexpart.eu
+
+   identified the source files from emoslib which calc_etadot needs
+   converted them from f77 to f90 code
+   adapted makefile to get rid of emoslib and make use of the fft source files
+
+   new files: set99.f90, fft99.f90, qpassm.f90, rpassm.f90, jsppole.f90
+      
