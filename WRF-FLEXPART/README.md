@@ -16,7 +16,7 @@ cd run && sbatch --account=project_XXXXXXX run_flexwrf_omp.slurm
 ## 1. What this code is
 
 This is **not** the official release from flexpart.eu. It is the INAR working copy of
-FLEXPART-WRF 3.3.2, modified by **Diego Aliaga**, and used
+FLEXPART-WRF 3.3.2, modified by **Diego Aliaga** and **Manuel Bettineschi**, and used
 for the SALTENA campaign in Bolivia and for the Izaña campaign (among others). See
 [`src/README.md`](src/README.md) for the modification notes and
 [`src/README.txt`](src/README.txt) for Brioude's upstream release notes.
@@ -27,7 +27,6 @@ Practical consequences:
   reading PBLH from WRF, comparison operators). Do not assume upstream documentation
   describes this binary exactly.
 - Do not replace `src/` with a fresh upstream download expecting the same results.
-- Upstream, for reference: <https://www.flexpart.eu/wiki/FpLimitedareaWrf>
 
 Cite Brioude et al. (2013), Geosci. Model Dev. 6, 1889–1904.
 
@@ -327,56 +326,3 @@ Monitor with `squeue --me`, `seff <jobid>` (efficiency after it finishes) and th
 
 ## 6. Troubleshooting
 
-| Symptom | Cause and fix |
-|---|---|
-| `cannot execute binary file: Exec format error` | Built on the aarch64 (GPU) side, submitted to a CPU partition, or vice versa. Rebuild on `roihu-cpu.csc.fi`. |
-| `roihu_env.sh` aborts with "this is a aarch64 node" | Same thing, caught early. Log in to the CPU login node. |
-| `module load` fails / no `mpif90` | Wrong `gcc` for the architecture: x86_64 needs `gcc/15.2.0`, aarch64 `gcc/14.3.0`. Check with `module spider netcdf-fortran`. |
-| `NC_FLIBS is empty — you must 'source roihu_env.sh'` | You ran `make` directly. Use `compile_roihu.sh`. |
-| `error while loading shared libraries: libnetcdff.so` | The job did not load the build modules. Use the supplied Slurm scripts, or `source roihu_env.sh` first. |
-| `No rule to make target 'xxx.o'` | Something in `OBJECTS` has no source file. See section 8. |
-| `#### FLEXPART MODEL ERROR! ... CANNOT BE OPENED` | A path in lines 2–4 of the input file is wrong, or a directory is missing its trailing slash, or the output directory does not exist. |
-| Same error, but the file name printed is **blank** | The path is longer than the 120-character limit and was truncated. Section 4.1. |
-| `NUMBER OF AGE CLASSES GREATER THAN MAXIMUM ALLOWED` | `NAGECLASS > maxageclass` — section 2. |
-| `SFC_OPTION = 1 ... no longer supported` | **Not fatal.** Stale message; see section 4.4. |
-| Job runs but the output directory stays empty | The run has not reached the first output interval yet, or line 2 points somewhere unexpected. Check the `.out` log. |
-| Output full of `NaN` | Very likely uninitialised variables under gcc 15 `-O3` — this bit CHIMERE on the same machine. `-finit-local-zero` is already in the flags for that reason; if NaN still appears, rebuild with the debug flags commented in `makefile.roihu` (`-O0 -g -fbacktrace -ffpe-trap=invalid -finit-real=snan`) and read the backtrace. |
-| Build races with `-j` | `./compile_roihu.sh omp -j 1`. The dependency fixes in `makefile.roihu` should make this unnecessary — please report it if it happens. |
-
----
-
-## 7. What was changed for Roihu
-
-`makefile.roihu` is a copy of the upstream `src/makefile.mom` with every deviation
-marked `# ROIHU:`. `src/` itself is untouched, so the model physics is exactly what
-INAR has been running.
-
-| Change | Why |
-|---|---|
-| netCDF flags come from `nf-config` via `roihu_env.sh` instead of one `$NETCDF` prefix | Roihu installs netcdf-c and netcdf-fortran under **separate** Spack prefixes, and uses `lib` vs `lib64` inconsistently, so `-I$NETCDF/include -L$NETCDF/lib -lnetcdff` cannot work |
-| dropped `${OPENMPI_INSTALL_ROOT}` from the mpi target | a Puhti-only variable, unset on Roihu (it silently expanded to `-I/include`); the `mpif90` wrapper already provides the MPI paths |
-| added `-fallow-argument-mismatch` | gfortran ≥ 10 rejects the old-style `mpif.h` calls in `send*_mpi.f90` |
-| `rm -f` in `clean` | the old `rm` failed, and aborted the build, on a clean tree |
-| fixed `$(MPI_ONLY_OBJECTS)` → `$(MPI_ONLY_OBJS)` (and the serial/omp equivalents), plus explicit inter-module dependencies | those variables never existed, so `make -j` raced on `par_mod.mod` and had to be run twice. It now completes in one pass. |
-| moved `gf2xe.o` and `ranlux.o` into `MODOBJS` | they define modules (`gf2xe`, `luxury`) that other files `use` |
-| removed `cmapf1.0.o`, `distance.o`, `distance2.o`, `outgrid_init_nest.o` from `OBJECTS` | **these source files do not exist in this tree.** `cmapf1.0` was folded into `cmapf_mod.f90`; the other three are unreferenced (`outgrid_init_nest` only appears in a commented-out call at `flexwrf_mpi.f90:247`; the live code uses `outgrid_init_nest_reg`/`_irreg`). Keeping them made a clean checkout fail with `No rule to make target` — the old build only worked because stale `.o` files were lying around. |
-| each flavour builds in its own `build/<flavour>/` | the link step is `$(FC) *.o`, so serial/omp/mpi objects sharing a directory silently produce a mixed binary |
-
-Compiler flags kept from upstream: `-O3 -m64 -mcmodel=medium -fconvert=little-endian
--finit-local-zero -fno-range-check -std=legacy -fallow-invalid-boz
--ffree-line-length-none`. `-finit-local-zero` is load-bearing on gcc 15 — see the NaN
-row in section 7. `-fconvert=little-endian` must match whatever reads the binary
-`partposit*` particle dumps.
-
-### Building somewhere other than Roihu
-
-For testing the build logic on a machine with a system gfortran and netCDF-Fortran
-(no modules, no Slurm):
-
-```bash
-FLEXWRF_SKIP_MODULES=1 ./compile_roihu.sh all
-```
-
-This skips `module purge/load` and the architecture check, and takes the netCDF flags
-from whatever `nf-config` is on `PATH`. It proves the build works; it does **not**
-prove anything about Roihu's gcc 15 toolchain.
