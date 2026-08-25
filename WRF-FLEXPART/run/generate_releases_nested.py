@@ -52,7 +52,52 @@ NXMAXN, NYMAXN = 400, 283   # par_mod.f90:167, the nest field dimensions compile
 
 # ------------------------------------------------------------------- nest geometry
 
-def nest_footprint(mother, nest):
+def nest_placement(mother, nest):
+    """Where the nest sits in the mother: (i_parent_start, j_parent_start, m, source).
+
+    Taken from the nest file's own attributes when they describe a real WRF nest.
+    They often do not: an `ndown` run re-runs the fine domain as its OWN d01, so its
+    wrfout carries GRID_ID 1, PARENT_ID 0, I/J_PARENT_START 1, PARENT_GRID_RATIO 1 --
+    the nesting metadata is gone even though the grid is still aligned to the parent.
+    In that case the placement is recovered from the geometry: invert the fine grid's
+    south-west corner on the mother grid and undo the half-cell offset,
+
+        i = i_parent_start - 1 - dumc      (gridcheck_nests.f90:389)
+
+    which must come out a whole number if the two grids really are aligned.
+    """
+    ratio = mother.dx / nest.dx
+    m = int(round(ratio))
+    if m < 1 or abs(ratio - m) > 1e-6:
+        raise SystemExit(f"dx ratio {mother.dx:g} / {nest.dx:g} = {ratio:.6f} is not a "
+                         f"whole number; these two grids cannot be nested")
+    if (nest.grid_id != mother.grid_id and nest.parent_id == mother.grid_id
+            and nest.parent_grid_ratio == m):
+        return nest.i_parent_start, nest.j_parent_start, m, "attributes"
+
+    dumc = (m - 1) / (2.0 * m)
+    i, j = mother.ll_to_ij(float(nest.lon[0, 0]), float(nest.lat[0, 0]))
+    ips, jps = i + dumc + 1.0, j + dumc + 1.0
+    print(f"note: {nest.name} carries no usable nest metadata (GRID_ID "
+          f"{nest.grid_id}, PARENT_ID {nest.parent_id}, PARENT_GRID_RATIO "
+          f"{nest.parent_grid_ratio}) -- deriving its placement from the grids "
+          f"themselves", file=sys.stderr)
+    off = max(abs(ips - round(ips)), abs(jps - round(jps)))
+    if off > 0.02:
+        raise SystemExit(
+            f"the fine grid is NOT aligned to the mother grid: its corner falls at "
+            f"mother index i = {i:.4f}, j = {j:.4f}, which makes I_PARENT_START "
+            f"{ips:.4f} and J_PARENT_START {jps:.4f} -- these must be whole numbers "
+            f"(off by {off:.4f} cells). FLEXPART's nesting assumes the fine cells tile "
+            f"the coarse ones exactly; two independently configured WRF domains "
+            f"generally do not, and there is no way to nest them.")
+    print(f"derived placement: I_PARENT_START = {round(ips)}, J_PARENT_START = "
+          f"{round(jps)}, ratio {m} (corner lands to {off * mother.dx:.0f} m of an "
+          f"exact fit)", file=sys.stderr)
+    return round(ips), round(jps), m, "geometry"
+
+
+def nest_footprint(mother, nest, placement):
     """(x0, y0, x1, y1) of the nest in mother grid metres.
 
     Reproduces gridcheck_nests.f90:386-391 and 502-505 exactly, so what we write
@@ -66,53 +111,59 @@ def nest_footprint(mother, nest):
     zero-based index of the parent cell whose lower-left corner the nest's cell
     (0,0) sits on; xmet0 = ymet0 = 0 in FLEXPART-WRF (gridcheck.f90:145).
     """
-    m = nest.parent_grid_ratio
-    if m < 1:
-        raise SystemExit(f"{nest.name}: PARENT_GRID_RATIO = {m}, which cannot be right")
+    ips, jps, m, _ = placement
     dumc = (m - 1) / (2.0 * m)
-    x0 = mother.dx * ((nest.i_parent_start - 1) - dumc)
-    y0 = mother.dy * ((nest.j_parent_start - 1) - dumc)
+    x0 = mother.dx * ((ips - 1) - dumc)
+    y0 = mother.dy * ((jps - 1) - dumc)
     return x0, y0, x0 + (nest.nx - 1) * nest.dx, y0 + (nest.ny - 1) * nest.dy
 
 
-def check_nest(mother, nest):
-    """Everything gridcheck_nests.f90 would stop on, reported now instead."""
-    if nest.grid_id == mother.grid_id:
-        raise SystemExit(f"--wrf and --wrf-nest are the same domain (GRID_ID "
-                         f"{mother.grid_id}); point --wrf-nest at the inner domain")
-    if not mother.is_mother():
-        raise SystemExit(f"--wrf must be the MOTHER domain: FLEXPART grid metres are "
-                         f"measured on the first domain, but {mother.name} has "
-                         f"GRID_ID {mother.grid_id}")
-    if nest.parent_id != mother.grid_id:
-        print(f"warning: {nest.name} has PARENT_ID {nest.parent_id} but "
-              f"{mother.name} is GRID_ID {mother.grid_id}; if d02 is nested inside "
-              f"another nest rather than d01, that intermediate domain has to be "
-              f"given to FLEXPART too", file=sys.stderr)
+def check_projection(mother, nest):
+    """gridcheck_nests.f90:162-176: same projection id and the same three parameters."""
     if nest.map_proj != mother.map_proj:
         raise SystemExit(f"MAP_PROJ differs ({mother.map_proj} vs {nest.map_proj}); "
-                         f"gridcheck_nests.f90:173 stops on this")
+                         f"gridcheck_nests.f90:171 stops on this")
+    for label, a, b in (("STAND_LON", mother.stand_lon, nest.stand_lon),
+                        ("TRUELAT1", mother.truelat1, nest.truelat1),
+                        ("TRUELAT2", mother.truelat2, nest.truelat2)):
+        if a != a or b != b:                       # NaN: the attribute is absent
+            print(f"note: {label} missing from one of the files, cannot compare it "
+                  f"here -- FLEXPART will", file=sys.stderr)
+            continue
+        if abs(a - b) > 3.0e-7 * max(abs(a), 1.0e-30):   # the model's own tolerance
+            raise SystemExit(
+                f"{label} differs ({a} vs {b}); gridcheck_nests.f90:171 stops on this. "
+                f"The two WRF runs use different projections, so their grids cannot be "
+                f"nested no matter how they are labelled.")
+
+
+def check_nest(mother, nest, placement):
+    """Everything gridcheck_nests.f90 would stop on, reported now instead."""
+    if not mother.is_mother():
+        print(f"warning: {mother.name} has GRID_ID {mother.grid_id}, not 1; FLEXPART "
+              f"measures grid metres on whichever domain comes first, so make sure "
+              f"--wrf really is the outer one", file=sys.stderr)
+    check_projection(mother, nest)
     if mother.nz is not None and nest.nz is not None and mother.nz != nest.nz:
         raise SystemExit(f"the two domains have different numbers of vertical levels "
                          f"({mother.nz} vs {nest.nz}); gridcheck_nests.f90:150-159 "
                          f"stops on this (nuvzn/nuvz differ)")
-
-    ratio = mother.dx / nest.dx
-    if abs(ratio - nest.parent_grid_ratio) > 1e-6:
-        print(f"warning: dx ratio {ratio:.4f} does not match PARENT_GRID_RATIO "
-              f"{nest.parent_grid_ratio}; the nest placement below may be off",
-              file=sys.stderr)
-    if nest.nx > NXMAXN or nest.ny > NYMAXN:
+    if nest.nx + 1 > NXMAXN or nest.ny + 1 > NYMAXN:
         print(f"warning: the nest is {nest.nx} x {nest.ny} points but par_mod.f90 is "
-              f"compiled with nxmaxn = {NXMAXN}, nymaxn = {NYMAXN}; raise them and "
-              f"rebuild, or FLEXPART will stop reading the nest", file=sys.stderr)
+              f"compiled with nxmaxn = {NXMAXN}, nymaxn = {NYMAXN} and needs nxn+1 to "
+              f"fit (staggered winds); raise them and rebuild, or FLEXPART will stop "
+              f"reading the nest", file=sys.stderr)
 
-    x0, y0, x1, y1 = nest_footprint(mother, nest)
+    ips, jps, m, source = placement
+    if source == "geometry":
+        report_metadata_fix(mother, nest, ips, jps, m)
+
+    x0, y0, x1, y1 = nest_footprint(mother, nest, placement)
     xmax, ymax = mother.extent_m()
     print(f"nest footprint on the mother grid: x {x0:.0f} .. {x1:.0f} m, "
           f"y {y0:.0f} .. {y1:.0f} m  (mother spans 0 .. {xmax:.0f} x 0 .. {ymax:.0f} m, "
-          f"i_parent_start = {nest.i_parent_start}, j = {nest.j_parent_start}, "
-          f"ratio {nest.parent_grid_ratio})", file=sys.stderr)
+          f"i_parent_start = {ips}, j = {jps}, ratio {m}, from the {source})",
+          file=sys.stderr)
 
     # gridcheck_nests.f90:513 -- xln/yln >= 0 and xrn/yrn <= nx-1 / ny-1
     if (x0 < 0 or y0 < 0 or x1 > (mother.nx - 1) * mother.dx
@@ -123,12 +174,10 @@ def check_nest(mother, nest):
             f"0 <= y <= {(mother.ny - 1) * mother.dy:.0f} m); "
             "gridcheck_nests.f90:513 would stop the run")
 
-    # independent cross-check: invert the nest's own corner lat/lon on the mother grid
-    try:
+    # cross-check the attribute placement against the grid itself (when derived from
+    # the geometry the two agree by construction, so there is nothing to compare)
+    if source == "attributes":
         cx, cy, _ = mother.ll_to_xymeter(float(nest.lon[0, 0]), float(nest.lat[0, 0]))
-    except Exception as exc:                                    # pragma: no cover
-        print(f"note: could not cross-check the nest corner ({exc})", file=sys.stderr)
-    else:
         off = max(abs(cx - x0), abs(cy - y0))
         if off > 0.5 * mother.dx:
             print(f"warning: the nest corner from I/J_PARENT_START ({x0:.0f}, "
@@ -141,14 +190,72 @@ def check_nest(mother, nest):
     return x0, y0, x1, y1
 
 
-def outgrid_nest_lines(mother, nest, res, margin):
+def report_metadata_fix(mother, nest, ips, jps, m):
+    """Tell the user how to put the nest metadata back, because FLEXPART needs it.
+
+    This script can place the nest from the geometry, but read_ncwrfout.f90:410-416
+    copies PARENT_ID / I_PARENT_START / J_PARENT_START / PARENT_GRID_RATIO straight off
+    the nest file, and gridcheck_nests.f90:380-406 places the nest from those. Nothing
+    in flexwrf.input overrides them. Depending on what PARENT_ID holds you get either
+    a clean stop or, worse, a silently misplaced nest -- see the message below.
+    """
+    d = os.path.dirname(os.path.abspath(nest.path))
+    glob_pat = re.sub(r"_\d{4}-\d{2}-\d{2}_.*$", "_*", nest.name) or nest.name
+    good = mother.dx * ((ips - 1) - (m - 1) / (2.0 * m))
+    if nest.parent_id != mother.grid_id:
+        why = [
+            "FLEXPART will refuse the file:",
+            "",
+            "      gridcheck_nests fatal error -- parent grid not found for l =  1",
+            "",
+            f"  gridcheck_nests.f90:402 -- PARENT_ID is {nest.parent_id}, and it has to",
+            f"  name the mother's GRID_ID {mother.grid_id}.",
+        ]
+    else:
+        r = nest.parent_grid_ratio
+        bad = mother.dx * ((nest.i_parent_start - 1) - (r - 1) / (2.0 * r))
+        why = [
+            "FLEXPART will NOT stop -- it will silently misplace",
+            f"  the nest. PARENT_ID {nest.parent_id} does name the mother, so",
+            f"  gridcheck_nests.f90:389 places the nest using PARENT_GRID_RATIO {r} and",
+            f"  I_PARENT_START {nest.i_parent_start}, putting its corner at x = {bad:.0f} m "
+            f"instead of",
+            f"  {good:.0f} m. That passes every bounds check, and the run completes with",
+            "  the fine winds applied in the wrong place.",
+        ]
+    print("\n".join([
+        "",
+        "  " + "-" * 74,
+        f"  {nest.name} carries no nesting metadata.",
+        "  " + why[0],
+    ] + why[1:] + [
+        "",
+        "  This script placed the nest from the grids themselves, but the model reads",
+        "  the attributes. Write them onto the nest wrfout files:",
+        "",
+        "      ncatted -O -h \\",
+        f"        -a GRID_ID,global,o,l,{mother.grid_id + 1} \\",
+        f"        -a PARENT_ID,global,o,l,{mother.grid_id} \\",
+        f"        -a PARENT_GRID_RATIO,global,o,l,{m} \\",
+        f"        -a I_PARENT_START,global,o,l,{ips} \\",
+        f"        -a J_PARENT_START,global,o,l,{jps} \\",
+        f"        {d}/{glob_pat}",
+        "",
+        "  Back the files up first -- this edits them in place. Then rerun this script;",
+        "  it will pick the values up from the attributes and say so.",
+        "  " + "-" * 74,
+        "",
+    ]), file=sys.stderr)
+
+
+def outgrid_nest_lines(mother, nest, placement, res, margin):
     """The OUTGRID_NEST block: origin and extent in mother grid metres, no levels.
 
     readinput.f90:1181-1199 reads exactly seven values here and derives the far
     corner as x0 + dxoutn*numxgridn; the vertical levels are shared with the main
     grid, so none are written.
     """
-    x0, y0, x1, y1 = nest_footprint(mother, nest)
+    x0, y0, x1, y1 = nest_footprint(mother, nest, placement)
     if margin:
         inset = margin * nest.dx, margin * nest.dy
         x0, x1 = x0 + inset[0], x1 - inset[0]
@@ -385,7 +492,7 @@ def pick_wrfout(path, want_domain=None, innermost=False):
 
 # ------------------------------------------------------------------------- position
 
-def resolve_position(a, mother, nest):
+def resolve_position(a, mother, nest, placement):
     """Fill a.x1/y1/x2/y2 in mother grid metres and check the box lands inside d02."""
     half = a.box / 2.0
     x, y, err = mother.ll_to_xymeter(a.lon, a.lat)
@@ -401,7 +508,7 @@ def resolve_position(a, mother, nest):
             print(f"warning: release {label} = {v:.1f} m is outside the mother domain "
                   f"(0 .. {limit:.0f} m); FLEXPART will stop", file=sys.stderr)
 
-    nx0, ny0, nx1, ny1 = nest_footprint(mother, nest)
+    nx0, ny0, nx1, ny1 = nest_footprint(mother, nest, placement)
     inside = (nx0 <= corners[0][0] and corners[1][0] <= nx1
               and ny0 <= corners[0][1] and corners[1][1] <= ny1)
     if not inside:
@@ -537,8 +644,9 @@ def main(argv=None):
     nest = wrfgrid.WrfGrid(pick_wrfout(a.wrf_nest, a.nest_domain, innermost=True))
     print("mother " + mother.describe(), file=sys.stderr)
     print("nest   " + nest.describe(), file=sys.stderr)
-    check_nest(mother, nest)
-    resolve_position(a, mother, nest)
+    placement = nest_placement(mother, nest)
+    check_nest(mother, nest, placement)
+    resolve_position(a, mother, nest, placement)
 
     # ------------------------------------------------------------- the input file
     lines, numpoint, sim_start, sim_end = read_input(a.input)
@@ -608,7 +716,7 @@ def main(argv=None):
         set_switch(lines, "NESTED_OUTPUT", 1)
         set_switch(lines, "OUTGRID_COORD", 0)
         lines = replace_outgrid_nest(
-            lines, outgrid_nest_lines(mother, nest,
+            lines, outgrid_nest_lines(mother, nest, placement,
                                       a.outgrid_nest_res or nest.dx, a.margin))
     numpoint = find_numpoint(lines)
 

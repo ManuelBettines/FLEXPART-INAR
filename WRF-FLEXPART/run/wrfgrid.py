@@ -89,6 +89,10 @@ class WrfGrid:
             self.i_parent_start = int(getattr(ds, "I_PARENT_START", 1))
             self.j_parent_start = int(getattr(ds, "J_PARENT_START", 1))
             self.parent_grid_ratio = int(getattr(ds, "PARENT_GRID_RATIO", 1))
+            # the projection parameters gridcheck_nests.f90:162-176 compares
+            self.stand_lon = float(getattr(ds, "STAND_LON", float("nan")))
+            self.truelat1 = float(getattr(ds, "TRUELAT1", float("nan")))
+            self.truelat2 = float(getattr(ds, "TRUELAT2", float("nan")))
             self.nz = (ds.dimensions["bottom_top"].size
                        if "bottom_top" in ds.dimensions else None)
         self.ny, self.nx = self.lon.shape  # south_north, west_east

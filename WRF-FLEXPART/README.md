@@ -280,9 +280,28 @@ writing:
 ```
 
 It also fails early, with the source line, on the things `gridcheck_nests.f90` would
-otherwise stop on halfway into a job: different `MAP_PROJ`, a different number of
-vertical levels, a nest that does not fit inside the mother domain, or a nest larger
-than the `nxmaxn`/`nymaxn` compiled into `par_mod.f90`.
+otherwise stop on halfway into a job: a different `MAP_PROJ`, `STAND_LON` or
+`TRUELAT1/2`, a different number of vertical levels, a nest that does not fit inside
+the mother domain, or a nest larger than the `nxmaxn`/`nymaxn` compiled into
+`par_mod.f90`.
+
+**If your fine domain was run separately (`ndown`).** `ndown` re-runs the inner domain
+as its *own* `d01`, so its wrfout says `GRID_ID 1, PARENT_ID 0, I_PARENT_START 1,
+PARENT_GRID_RATIO 1` — the nesting metadata is gone even though the grid is still
+aligned to the parent. Two symptoms follow:
+
+- the script cannot read the placement off the file, so it **derives it from the two
+  grids** instead — inverting the fine grid's corner on the mother grid and checking
+  the result is a whole number of coarse cells. It prints what it found:
+  `derived placement: I_PARENT_START = 41, J_PARENT_START = 31, ratio 3`. If the
+  grids are not aligned it stops and says so, because FLEXPART's nesting assumes the
+  fine cells tile the coarse ones exactly;
+- **FLEXPART still reads those attributes itself** and stops with
+  `gridcheck_nests fatal error -- parent grid not found for l = 1`
+  (`src/gridcheck_nests.f90:402`). Nothing in `flexwrf.input` overrides this. The
+  script prints the `ncatted` command that writes the attributes back onto the fine
+  wrfout files; run it (on a backup — it edits in place), then rerun the script and
+  it will report `from the attributes` instead of `from the geometry`.
 
 ### 4.5 Switches worth understanding
 
