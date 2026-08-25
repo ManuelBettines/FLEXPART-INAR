@@ -110,7 +110,8 @@
 
         call KF_LUTAB(SVP1,SVP2,SVP3,SVPT0)
 
-       write(*,*)'stepcu=',stepcu
+!      debug print disabled (was flooding stdout every convection call)
+!      write(*,*)'stepcu=',stepcu
        KTAU=0                        
 
       DXSQ=DX*DX
@@ -178,7 +179,8 @@
 ! added flux output
                  umf,uer,udr,dmf,der,ddr)
 
-           write(*,*)'after call KF_eta_para'
+!           debug print disabled (was flooding stdout every KF_eta_PARA call)
+!           write(*,*)'after call KF_eta_para'
 !
          ENDIF 
        ENDDO

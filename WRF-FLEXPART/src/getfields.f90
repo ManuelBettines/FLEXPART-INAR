@@ -158,7 +158,7 @@ subroutine getfields(itime, nstop)
                 !              if (option_verbose.gt.1) then
                 call system_clock (clck_counts_end, clck_rate)
                 tins = real(clck_counts_end - clck_counts_beg) / real(clck_rate)
-                print*, 'readwind', tins
+                if (option_verbose.gt.1) print*, 'readwind', tins
                 call system_clock (clck_counts_beg, clck_rate)
                 !             endif
                 call calcpar(memind(2), uuh, vvh, pvh)
@@ -166,7 +166,7 @@ subroutine getfields(itime, nstop)
                 !             if (option_verbose.gt.1) then
                 call system_clock (clck_counts_end, clck_rate)
                 tins = real(clck_counts_end - clck_counts_beg) / real(clck_rate)
-                print*, 'calcpar', tins
+                if (option_verbose.gt.1) print*, 'calcpar', tins
                 call system_clock (clck_counts_beg, clck_rate)
                 !             endif
                 call verttransform(memind(2), uuh, vvh, wwh, pvh, divh)
@@ -174,7 +174,7 @@ subroutine getfields(itime, nstop)
                 !             if (option_verbose.gt.1) then
                 call system_clock (clck_counts_end, clck_rate)
                 tins = real(clck_counts_end - clck_counts_beg) / real(clck_rate)
-                print*, 'verttran', tins
+                if (option_verbose.gt.1) print*, 'verttran', tins
                 !             endif
                 memtime(2) = wftime(indj + 1)
                 nstop = 1

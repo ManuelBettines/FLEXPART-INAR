@@ -118,7 +118,8 @@
             umfzf(i)=umfzf(i-1)+abs(umfdz(i-1)) 
     
             dmfzf(i)=dmfzf(i-1)+abs(dmfdz(i-1))
-            if (i .eq. 2)write(*,*)'int(cu_top1)=',int(cu_top1)
+!           debug print disabled (was flooding stdout)
+!           if (i .eq. 2)write(*,*)'int(cu_top1)=',int(cu_top1)
 !             write(*,*)i,umfzf(i),umfdz(i)
           ENDdo 
 ! estimate fraction of particles in the convective column will be mixed by cloud
@@ -133,7 +134,8 @@
              return
           endif
           fmix=abs(umf(int(cu_bot1)))*dt/mass
-          write(*,*)'PRE_redist_kf.f, mass=,fmix=',mass,fmix
+!          debug print disabled (was flooding stdout)
+!          write(*,*)'PRE_redist_kf.f, mass=,fmix=',mass,fmix
      
        return
  end subroutine pre_redist_kf

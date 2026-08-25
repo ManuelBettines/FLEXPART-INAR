@@ -387,10 +387,10 @@
             endif
             if ((iout.eq.4).or.(iout.eq.5)) call plumetraj(jtime)
             if (iflux.eq.1) call fluxoutput(jtime)
-            write(*,45) jtime,numpart,gridtotalunc,wetgridtotalunc, &
-            drygridtotalunc
-45          format(i9,' SECONDS SIMULATED: ',i9, &
-            ' PARTICLES:    Uncertainty: ',3f7.3)
+            write(*,45) real(jtime)/3600.,jtime,numpart, &
+            gridtotalunc,wetgridtotalunc,drygridtotalunc
+45          format(' SIMULATED: ',f10.2,' h (',i9,' s)   PARTICLES: ',i9, &
+            '   Uncertainty: ',3f7.3)
   call system_clock(clck_counts_end2,clck_rate2)
   tins2=real(clck_counts_end2 - clck_counts_beg2)/real(clck_rate2)
               print*,'time needed',tins2
