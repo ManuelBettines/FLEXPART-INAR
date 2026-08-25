@@ -83,6 +83,14 @@ class WrfGrid:
             self.map_proj = int(getattr(ds, "MAP_PROJ", -1))
             self.parent_id = int(getattr(ds, "PARENT_ID", 0))
             self.grid_id = int(getattr(ds, "GRID_ID", self.domain or 1))
+            # where this domain sits in its parent, needed to place a nest in the
+            # mother's grid metres exactly as gridcheck_nests.f90:386-391 does.
+            # I_PARENT_START/J_PARENT_START are 1-based indices on the parent.
+            self.i_parent_start = int(getattr(ds, "I_PARENT_START", 1))
+            self.j_parent_start = int(getattr(ds, "J_PARENT_START", 1))
+            self.parent_grid_ratio = int(getattr(ds, "PARENT_GRID_RATIO", 1))
+            self.nz = (ds.dimensions["bottom_top"].size
+                       if "bottom_top" in ds.dimensions else None)
         self.ny, self.nx = self.lon.shape  # south_north, west_east
 
     # ------------------------------------------------------------------ geometry
