@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Set up a NESTED FLEXPART-WRF run: releases, both output grids, and the nest paths.
 
-This is the two-domain counterpart of generate_releases.py. You point it at the
-mother wrfout (d01) and the nest wrfout (d02) and it writes, into one flexwrf.input:
+This is the two-domain counterpart of generate_releases.py. It takes the same flags
+plus --wrf-nest, and writes into one flexwrf.input:
 
-  * the nest's wrfout directory and its AVAILABLE file, appended to the PATHNAMES
-    block -- this is what makes FLEXPART read d02 winds at all (readinput.f90:110);
+  * the two wrfout directories and their AVAILABLE files in the PATHNAMES block --
+    the nest pair is what makes FLEXPART read d02 winds at all (readinput.f90:110);
   * NESTED_OUTPUT = 1, plus the OUTGRID_NEST section covering the d02 footprint,
     placed in the mother's grid metres the way gridcheck_nests.f90 computes it;
   * the main OUTGRID section covering d01, exactly as generate_releases.py does;
@@ -13,40 +13,10 @@ mother wrfout (d01) and the nest wrfout (d02) and it writes, into one flexwrf.in
 
     ./generate_releases_nested.py --input flexwrf.input \\
         --wrf /scratch/.../wrfout_d01/ --wrf-nest /scratch/.../wrfout_d02/ \\
-        --lat 28.309 --lon -16.499 --box 1000 \\
-        --outgrid --outgrid-res 3000 --log-levels 20 --zfirst 20 --ztop 7000
+        --start "20140201 000000" --end "20140301 000000" \\
+        --lat 45.3775 --lon 11.94 --box 15000 --z1 0 --z2 10 --npart 10000 \\
+        --outgrid --log-levels 20 --zfirst 10 --ztop 10000 --margin 5
 
-Why one nested run and not two separate ones
---------------------------------------------
-A particle uses the innermost nest that contains it and switches on the fly
-(advance.f90:295-302), so in a nested run a trajectory is driven by d02 winds inside
-the nest and d01 winds outside, and can re-enter. In a d02-only run a particle that
-crosses the nest edge is killed for good (advance.f90:1157-1161), which truncates
-backward footprints at the boundary and biases the strip just inside it low. The two
-setups are not equivalent; this script builds the nested one.
-
-Note the two independent meanings of "nest":
-  * nested INPUT  -- d02 wind fields, switched on by the extra PATHNAMES lines;
-  * nested OUTPUT -- a second, finer sampling grid over the same particles, switched
-    on by NESTED_OUTPUT and the OUTGRID_NEST section.
-This script sets up both, since wanting one without the other is unusual. Use
---no-nested-output to drive with d02 winds but keep a single output grid.
-
-The AVAILABLE files
--------------------
-Generate them first; FLEXPART requires the nest's time steps to be *identical* to the
-mother's and stops otherwise (readinput.f90:916-925):
-
-    ./generate_available.py /scratch/.../wrfout/ --outdir .
-    # -> AVAILABLE1 (d01), AVAILABLE2 (d02)
-
-This script re-checks that agreement over the simulation window before writing.
-
-The vertical levels work exactly as in generate_releases.py (--levels, --dz,
---nlevels or --log-levels with --ztop). The nested output grid has no levels of its
-own -- FLEXPART shares numzgrid between the two grids (readinput.f90:1174-1199).
-
-Written for the FLEXPART-WRF setup at INAR / University of Helsinki.
 """
 import argparse
 import glob
@@ -305,7 +275,12 @@ def as_dir(path):
 
 def write_pathnames(lines, nest_dir, nest_available, mother_dir=None,
                     mother_available=None):
-    """Keep the three mother paths (or replace them) and set the nest pair after."""
+    """Keep the output directory, refresh the mother paths, set the nest pair after.
+
+    The wrfout directories come from --wrf / --wrf-nest, so the same two flags that
+    place the grids also point FLEXPART at the fields. Only the output directory on
+    the first line is never touched.
+    """
     start, end, block = read_pathnames(lines)
     out_dir, wrf_dir, available = block[0].strip(), block[1].strip(), block[2].strip()
     old_nests = (len(block) - 3) // 2
@@ -410,31 +385,13 @@ def pick_wrfout(path, want_domain=None, innermost=False):
 
 # ------------------------------------------------------------------------- position
 
-def resolve_position(a, ap, mother, nest):
+def resolve_position(a, mother, nest):
     """Fill a.x1/y1/x2/y2 in mother grid metres and check the box lands inside d02."""
-    ll_corners = [a.lat1, a.lon1, a.lat2, a.lon2]
-    if any(v is not None for v in ll_corners) and (a.lat is not None or a.lon is not None):
-        ap.error("give either --lat/--lon or the corners --lat1/--lon1/--lat2/--lon2")
-    if any(v is not None for v in ll_corners) and not all(v is not None for v in ll_corners):
-        ap.error("--lat1, --lon1, --lat2 and --lon2 must all be given together")
-    if (a.lat is None) != (a.lon is None):
-        ap.error("--lat and --lon must be given together")
-
-    if a.lat is not None:                               # centre point + box size
-        half = a.box / 2.0
-        x, y, err = mother.ll_to_xymeter(a.lon, a.lat)
-        corners = [(x - half, y - half), (x + half, y + half)]
-        print(f"release centre {a.lat} N {a.lon} E -> x = {x:.1f} m, y = {y:.1f} m "
-              f"on the mother grid (fit {err:.1f} m), box {a.box:g} m", file=sys.stderr)
-    elif a.lat1 is not None:                            # two corners
-        x1, y1, e1 = mother.ll_to_xymeter(a.lon1, a.lat1)
-        x2, y2, e2 = mother.ll_to_xymeter(a.lon2, a.lat2)
-        corners = [(min(x1, x2), min(y1, y2)), (max(x1, x2), max(y1, y2))]
-        print(f"release box -> x {corners[0][0]:.1f} .. {corners[1][0]:.1f} m, "
-              f"y {corners[0][1]:.1f} .. {corners[1][1]:.1f} m on the mother grid "
-              f"(fit {max(e1, e2):.1f} m)", file=sys.stderr)
-    else:                                               # given in grid metres already
-        corners = [(float(a.x1), float(a.y1)), (float(a.x2), float(a.y2))]
+    half = a.box / 2.0
+    x, y, err = mother.ll_to_xymeter(a.lon, a.lat)
+    corners = [(x - half, y - half), (x + half, y + half)]
+    print(f"release centre {a.lat} N {a.lon} E -> x = {x:.1f} m, y = {y:.1f} m "
+          f"on the mother grid (fit {err:.1f} m), box {a.box:g} m", file=sys.stderr)
     (a.x1, a.y1), (a.x2, a.y2) = [tuple(f"{v:.1f}" for v in c) for c in corners]
 
     xmax, ymax = mother.extent_m()
@@ -488,33 +445,22 @@ def main(argv=None):
                      help="pick this domain from --wrf instead of the lowest")
     dom.add_argument("--nest-domain", type=int, metavar="NN", dest="nest_domain",
                      help="pick this domain from --wrf-nest instead of the highest")
-    dom.add_argument("--nest-dir", metavar="DIR", dest="nest_dir",
-                     help="wrfout directory written into PATHNAMES for the nest "
-                          "(default: the directory of --wrf-nest)")
+    dom.add_argument("--available", metavar="FILE",
+                     help="mother AVAILABLE file (default: the one already in the "
+                          "input file's PATHNAMES block)")
     dom.add_argument("--available-nest", metavar="FILE", dest="available_nest",
                      help="AVAILABLE file for the nest (default: AVAILABLE2 beside "
-                          "the mother's AVAILABLE already in the input file)")
-    dom.add_argument("--wrf-dir", metavar="DIR", dest="wrf_dir",
-                     help="overwrite the mother wrfout directory in PATHNAMES too")
-    dom.add_argument("--available", metavar="FILE",
-                     help="overwrite the mother AVAILABLE path in PATHNAMES too")
+                          "the mother's)")
 
     pos = ap.add_argument_group(
         "release position",
-        "in degrees (--lat/--lon or the four corner options) or directly in mother "
-        "grid metres (--x1/--y1/--x2/--y2); the box is checked against d02")
-    pos.add_argument("--lat", type=float, help="latitude of the release centre [deg]")
-    pos.add_argument("--lon", type=float, help="longitude of the release centre [deg]")
+        "in degrees, converted against --wrf; the box is checked against d02")
+    pos.add_argument("--lat", type=float, required=True,
+                     help="latitude of the release centre [deg]")
+    pos.add_argument("--lon", type=float, required=True,
+                     help="longitude of the release centre [deg]")
     pos.add_argument("--box", type=float, default=1000.0, metavar="METRES",
                      help="side of the release box around --lat/--lon (default: 1000 m)")
-    pos.add_argument("--lat1", type=float, help="latitude of the lower-left corner")
-    pos.add_argument("--lon1", type=float, help="longitude of the lower-left corner")
-    pos.add_argument("--lat2", type=float, help="latitude of the upper-right corner")
-    pos.add_argument("--lon2", type=float, help="longitude of the upper-right corner")
-    pos.add_argument("--x1", default="98000", help="XPOINT1, lower-left x [grid m]")
-    pos.add_argument("--y1", default="177000", help="YPOINT1, lower-left y [grid m]")
-    pos.add_argument("--x2", default="99000", help="XPOINT2, upper-right x [grid m]")
-    pos.add_argument("--y2", default="178000", help="YPOINT2, upper-right y [grid m]")
 
     og = ap.add_argument_group(
         "output grids",
@@ -555,9 +501,8 @@ def main(argv=None):
                      help="no release starts after this (default: so the last one "
                           "ends at the simulation end)")
     rel.add_argument("--every", type=int, default=3600,
-                     help="seconds between consecutive releases (default: 3600)")
-    rel.add_argument("--duration", type=int, default=None,
-                     help="length of one release in seconds (default: same as --every)")
+                     help="seconds between consecutive releases; each release lasts "
+                          "this long too, so they are back-to-back (default: 3600)")
     rel.add_argument("--kindz", type=int, default=1, choices=(1, 2, 3),
                      help="1 = m above ground, 2 = m above sea level, 3 = pressure")
     rel.add_argument("--z1", type=float, default=0.0, help="ZPOINT1, lower z-level")
@@ -567,8 +512,6 @@ def main(argv=None):
     rel.add_argument("--xmass", default=".1000E+0",
                      help="total mass emitted per block (default: .1000E+0)")
     rel.add_argument("--name", default="release", help="release name stem")
-    rel.add_argument("--first-index", type=int, default=1, dest="first_index",
-                     help="index of the first release name (default: 1)")
 
     ap.add_argument("--no-backup", action="store_true", dest="no_backup",
                     help="do not keep a .bak copy of the input file")
@@ -586,7 +529,7 @@ def main(argv=None):
         ap.error("--outgrid-res must be positive")
     if a.outgrid_nest_res is not None and a.outgrid_nest_res <= 0:
         ap.error("--outgrid-nest-res must be positive")
-    duration = timedelta(seconds=a.duration if a.duration is not None else a.every)
+    duration = timedelta(seconds=a.every)   # back-to-back releases, no gap
     levels = build_levels(a, ap) if a.outgrid else None
 
     # ------------------------------------------------------------------ the grids
@@ -595,7 +538,7 @@ def main(argv=None):
     print("mother " + mother.describe(), file=sys.stderr)
     print("nest   " + nest.describe(), file=sys.stderr)
     check_nest(mother, nest)
-    resolve_position(a, ap, mother, nest)
+    resolve_position(a, mother, nest)
 
     # ------------------------------------------------------------- the input file
     lines, numpoint, sim_start, sim_end = read_input(a.input)
@@ -607,7 +550,6 @@ def main(argv=None):
     mother_available = a.available or pathblock[2].strip()
     nest_available = a.available_nest or os.path.join(
         os.path.dirname(mother_available) or ".", "AVAILABLE2")
-    nest_dir = as_dir(a.nest_dir or a.wrf_nest)
     check_available(mother_available, nest_available, sim_start, sim_end)
 
     # ------------------------------------------------------------------- releases
@@ -629,7 +571,7 @@ def main(argv=None):
         ap.error("--end is before --start (is the simulation window longer than one "
                  "release?)")
 
-    blocks, t, index = [], start, a.first_index
+    blocks, t, index = [], start, 1
     while t <= end:
         blocks.append(release_block(t, t + duration, f"{a.name}{index}", a))
         t += timedelta(seconds=a.every)
@@ -643,8 +585,8 @@ def main(argv=None):
               f"simulation end; FLEXPART will reject it", file=sys.stderr)
 
     # ----------------------------------------------------------------- the rewrite
-    lines = write_pathnames(lines, nest_dir, nest_available,
-                            as_dir(a.wrf_dir) if a.wrf_dir else None, a.available)
+    lines = write_pathnames(lines, as_dir(a.wrf_nest), nest_available,
+                            as_dir(a.wrf), a.available)
     set_switch(lines, "RELEASE_COORD", 0)
     if a.outgrid:
         res = a.outgrid_res or mother.dx

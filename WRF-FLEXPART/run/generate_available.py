@@ -24,7 +24,6 @@ Examples
   # restrict to the simulation period, print to stdout
   ./generate_available.py /scratch/.../wrfout/ --start 20220321 --end 20220627 -o -
 
-Written for the FLEXPART-WRF setup at INAR / University of Helsinki.
 """
 import argparse
 import glob
