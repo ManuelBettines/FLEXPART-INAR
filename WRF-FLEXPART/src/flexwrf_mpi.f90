@@ -155,7 +155,13 @@
       call gasdev1(idummy,rannumb(ii),rannumb(ii-1),inext,inextp,ma,iff)
 !     print*,'rand',myid
 !     print*,rannumb(1:5)
-!     call ranlux(uniform_rannumb,maxrandomp)  ! this generate a uniform distribution
+! uniform_rannumb must be filled here too, not only in the newrandomgen=1 branch
+! below: initialize.f90 reads dcas=uniform_rannumb(nrand) whenever cblflag=1, and
+! initialize_cbl_vel.f90 branches on dcas.le.aluarw. Left unfilled the array is
+! all zeros, aluarw is always positive, and every CBL particle is initialised
+! into the updraft mode.
+      call RLUXGO(3,254+myid*443,0,0)  ! per-rank seed, as in the branch below
+      call ranlux(uniform_rannumb,maxrand3)  ! this generate a uniform distribution
       else
       idummy=254+myid*443   !different seed for different mpi processes are produced so indepedent stream for any mpi process suing RANLUX are certain
       call RLUXGO(3,idummy,0,0)  ! this set the luxury level to 3 and initalize the generator for any myid 

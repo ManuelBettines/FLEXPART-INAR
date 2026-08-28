@@ -558,6 +558,16 @@ subroutine timemanager(mts)
         ompid = OMP_GET_THREAD_NUM()
         chunksize3 = int(real(numpart) / real(n_threads) / 20.) + 1 !more efficient
 
+        ! Same guard as timemanager_mpi.f90, which had it and this file did not.
+        ! Without it, running with more threads than maxomp/MAX_STREAM silently
+        ! writes past nan_count(MAX_STREAM) in advance.f90 and addresses rannumb
+        ! out of its per-thread block: memory corruption and a SIGSEGV hours in,
+        ! instead of an error at the first timestep.
+        if (ompid+1 .gt. maxomp .or. ompid+1 .gt. MAX_STREAM) then
+            print*, 'problem with maxomp. modify par_mod.f90', maxomp, MAX_STREAM, ompid+1
+            stop
+        endif
+
         !       chunksize3=int(chunksize2/omp_get_num_threads())+1
         !       chunksize3=int(real(chunksize2)/real(omp_get_num_threads())/20.)+1 !more efficient
 

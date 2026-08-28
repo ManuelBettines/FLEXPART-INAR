@@ -258,9 +258,15 @@ module par_mod
 
   integer,parameter :: maxrand=5000000 !comment by mc: maximum number of gasussina distributed and random distributed random number for a single mpi_process
   ! maxrand                 number of random numbers used
-  integer, parameter :: MAX_STREAM = 12 !added by mc : maximum total number of stream initilized (i.e. avilable) for the MT generator.
+  ! MAX_STREAM and maxomp are hard ceilings on OMP_NUM_THREADS, not just tuning
+  ! knobs. advance.f90 declares nan_count(MAX_STREAM) and indexes it with
+  ! ompid+1, and it addresses rannumb as nrand=cpt2+ompid*maxrand. Running with
+  ! more threads than these values corrupts static memory (SIGSEGV) and makes
+  ! every thread above the limit fall back onto the same random-number block.
+  ! Keep both >= the largest --cpus-per-task you intend to submit with.
+  integer, parameter :: MAX_STREAM = 128 !added by mc : maximum total number of stream initilized (i.e. avilable) for the MT generator.
 
-  integer,parameter :: maxomp=12
+  integer,parameter :: maxomp=128
   integer,parameter :: maxrandomp=maxrand*maxomp
   integer,parameter :: maxrand3=maxrand*(newrandomgen+maxomp*(1-newrandomgen))
 
