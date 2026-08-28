@@ -8,9 +8,7 @@ offline Lagrangian dispersion model driven by WRF output.
 ## 1. What this code is
 
 This is **not** the official release from flexpart.eu. It is the "INAR working copy" of
-FLEXPART-WRF 3.3.2, modified originally by **Diego Aliaga**, and further modfied by **Manuel Bettineschi**. See
-[`src/README.md`](src/README.md) for the modification notes and
-[`src/README.txt`](src/README.txt) for Brioude's upstream release notes.
+FLEXPART-WRF 3.3.2, modified originally by **Diego Aliaga**, and further modfied by **Manuel Bettineschi**. 
 
 ### Repository layout
 
@@ -75,7 +73,7 @@ Per-flavour logs are kept in `build/build_<flavour>.log`.
 
 | Binary | When |
 |---|---|
-| `flexwrf33_gnu_omp` | **the "standard" reccomended choice** — one node, many threads. |
+| `flexwrf33_gnu_omp` | **the "standard" reccomended choice**. |
 | `flexwrf33_gnu_mpi` | hybrid MPI+OpenMP across several nodes. **Do NOT use** (currently it has a bug which make the particle count "explode"). |
 | `flexwrf33_gnu_serial` | debugging and quick tests.  |
 
