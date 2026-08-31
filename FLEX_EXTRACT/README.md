@@ -130,9 +130,9 @@ keys, and compiles `calc_etadot`. At the end you should get:
 Everything about a retrieval is in one CONTROL file under `Run/Control/`. Start from
 `CONTROL_EA5` (ERA5, regional).
 
-``
+```bash
 cp Run/Control/CONTROL_EA Run/Control/CONTROL_EA.MyCase
-``
+```
 
 ```
 START_DATE 20180101           # start date of the retrival 
@@ -217,9 +217,9 @@ When the retrival is done you can mode to [`FLEXPART_v11/`](../FLEXPART_v11/).
 
 When running the first time you might get the following message: `**run_local.sh: line 128: ../Source/Python/submit.py: Permission denied**`
 If so, run the following command (and relaunch the download):
-``
+```bash
 chmod 777 ../Source/Python/submit.py
-``
+```
 
 Anything else: manuel.bettineschi@helsinki.fi
 
