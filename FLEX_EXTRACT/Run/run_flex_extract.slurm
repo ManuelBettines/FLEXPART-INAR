@@ -22,10 +22,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
-#SBATCH --mem=16G
+#SBATCH --mem=0
 #SBATCH --time=36:00:00
-#SBATCH --output=flex_extract_%j.out
-#SBATCH --error=flex_extract_%j.err
 
 #--------------------------------- CONFIGURATION -------------------------------------
 # Where roihu_env.sh lives (the repo's FLEX_EXTRACT directory).

@@ -34,12 +34,6 @@ BASETIME=None
 STEP=None
 LEVELIST=None
 AREA=None
-# Roihu: put both on /scratch, never in /projappl — a fortnight of hourly ERA5 on 137
-# levels is tens of GB, and the intermediate files are larger still. INPUTDIR is the
-# working directory (fort.*, flux*, OG_OROLSM*, the *_1/*_2 precipitation sub-steps);
-# OUTPUTDIR is where the finished EA* files land. Pointing both at the same directory
-# works and is what INAR has always done, but then the working files sit next to the
-# output — run/generate_available.py in FLEXPART_v11 knows to skip them.
 INPUTDIR='/scratch/project_XXXXXXX/<user>/FLEXPART/ERA5/<case>'
 OUTPUTDIR='/scratch/project_XXXXXXX/<user>/FLEXPART/ERA5/<case>'
 PP_ID=None
