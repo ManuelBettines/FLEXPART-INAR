@@ -70,12 +70,13 @@ hard-codes a project number: pass it as `sbatch --account=project_XXXXXXX`, or e
 
 `WRF-FLEXPART/src/` is FLEXPART-WRF v3.3.2, copyright J. Brioude, D. Arnold, A. Stohl
 and the other FLEXPART authors named in the file headers, released under the GPLv3.
-This repository redistributes it under the same terms, along with the Roihu build and
-run scripts.
+This repository redistributes it under the same terms.
 
 `FLEX_EXTRACT/` is a different licence: © 2014–2020 Anne Philipp, Leopold Haimberger and
 Petra Seibert under **CC-BY-4.0** (`FLEX_EXTRACT/LICENSE.md`), except the Fortran sources
 under `FLEX_EXTRACT/Source/Fortran/`, which are GPL-2.0.
+
+The Roihu-specific build, setup, run and analysis scripts written for this repository are released under **CC0 1.0 Universal (CC0-1.0)**. To the extent permitted by law, they may be copied, modified, distributed and used for any purpose without permission or attribution.
 
 ---
 

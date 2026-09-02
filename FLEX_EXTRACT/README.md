@@ -22,8 +22,8 @@ flex_extract does two things:
 That second step is why this is not simply a download script, and why it has to be
 compiled.
 
-Authors: Anne Tipka (formerly Philipp), Leopold Haimberger and Petra Seibert. Upstream
-documentation: `Documentation/html/index.html`, or
+**This is not the offical repository of flex_extract**, and it is adapted to work on Roihu. 
+Original authors: Anne Tipka (formerly Philipp), Leopold Haimberger and Petra Seibert. You can find the offical documentation in `Documentation/html/index.html`, or at
 <https://www.flexpart.eu/flex_extract/>.
 
 ### Repository layout
@@ -43,12 +43,6 @@ FLEX_EXTRACT/
 ├── Templates/             job and namelist templates
 └── Documentation/         upstream HTML documentation
 ```
-
-The upstream Bologna and Reading scripts (`setup_*.sh`, `Run/run_bologna.sh`,
-`Run/run_reading.sh`) have been removed: they install against hard-coded ECMWF
-library paths (including a hand-built emoslib that does not exist on Roihu) and
-submit to the ECMWF `ecs`/`ecgate` queues via `ecaccess`. On Roihu, install with
-`setup_roihu.sh` and submit with `Run/run_flex_extract.slurm`.
 
 ---
 
@@ -231,5 +225,6 @@ Anything else: manuel.bettineschi@helsinki.fi
 
 Upstream flex_extract is © 2014–2020 Anne Philipp, Leopold Haimberger and Petra Seibert,
 licensed **CC-BY-4.0** (`LICENSE.md`); the Fortran sources under `Source/Fortran/` carry
-`SPDX-License-Identifier: GPL-2.0`. The Roihu setup and run scripts added here are
-released under the same terms as the files they accompany.
+`SPDX-License-Identifier: GPL-2.0`.
+
+The Roihu setup code and other original code added by this repository's author are released under **CC0 1.0 Universal (CC0-1.0)**. To the extent permitted by law, these contributions may be copied, modified, distributed, and used for any purpose without permission or attribution.
