@@ -68,7 +68,11 @@ hard-codes a project number: pass it as `sbatch --account=project_XXXXXXX`, or e
 
 **GNU General Public License v3 or later** — see [`LICENSE`](LICENSE) for the full text.
 
-`WRF-FLEXPART/src/` is FLEXPART-WRF v3.3.2, copyright J. Brioude, D. Arnold, A. Stohl
+`FLEXPART_v11/` is FLEXPART v11, copyright the FLEXPART developers as named in the file
+headers (`SPDX-FileCopyrightText: FLEXPART 1998-2019`), released under the GPLv3 or later
+(`FLEXPART_v11/LICENSE`). This repository redistributes it under the same terms.
+
+`WRF-FLEXPART/` is FLEXPART-WRF v3.3.2, copyright J. Brioude, D. Arnold, A. Stohl
 and the other FLEXPART authors named in the file headers, released under the GPLv3.
 This repository redistributes it under the same terms.
 
@@ -80,6 +84,6 @@ The Roihu-specific build, setup, run and analysis scripts written for this repos
 
 ---
 
-## 6. Contacts
+## 5. Contacts
 
 For questions, suggestions or requests: manuel.bettineschi@helsinki.fi
