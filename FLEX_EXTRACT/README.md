@@ -86,8 +86,7 @@ minutes, so do it before you need the data.
    ```
 
 Retrievals are **queued at ECMWF**. A fortnight of hourly ERA5 on 137 levels can sit in
-the queue for hours before a byte arrives. Plan for it — that, not compute, is what
-`submit_chain.sh` (section 4) works around.
+the queue for hours before a byte arrives, so this might take a lot of time depending on how long of a period you want to retrieve.
 
 ### 2.2 The python environment
 
