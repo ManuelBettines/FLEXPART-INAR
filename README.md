@@ -14,24 +14,10 @@ Everything here assumes you are working on (and have access to) Roihu.
 | [`FLEXPART_v11/`](FLEXPART_v11/) | **FLEXPART v11** — the standard model, driven by ECMWF (ERA5 / operational) data | You want global or continental-scale runs, and complex terrain is not a problem. **Recommended for most cases** |
 | [`FLEX_EXTRACT/`](FLEX_EXTRACT/) | **flex_extract** — retrieves and prepares the ECMWF input files FLEXPART v11 needs | Always, before running FLEXPART v11 |
 | [`WRF-FLEXPART/`](WRF-FLEXPART/) | **FLEXPART-WRF v3.3.2** — offline dispersion driven by your own WRF output | You are working on complex terrain and need high spatial resolution, and you already have WRF output. **Not** recommended for most cases |
-| [`analysis_scripts/`](analysis_scripts/) | post-processing for FLEXPART-WRF backward runs: footprints, source maps, time series, transport regimes | After a WRF-FLEXPART run |
+| [`analysis_scripts/`](analysis_scripts/) | post-processing scripts for WRF-FLEXPART. If you want to use them for a "normal" FLEXPART run, you need to adapt them | After a WRF-FLEXPART run |
 
-Each folder has its own `README.md` with the full compile-and-run instructions for
-Roihu. **Start there** — this file only covers what is common to all of them.
-
-The two model versions have **different input formats and different output formats**;
-they are not drop-in replacements for each other.
-
-### The same shape in every folder
-
-| File | What it does |
-|---|---|
-| `roihu_env.sh` | the module stack. **Sourced** by the build and the run scripts, so the two can never drift apart. You never run it yourself |
-| `compile_roihu.sh` / `setup_roihu.sh` | one command, no modules to load first, a build summary at the end |
-| `makefile.roihu` / `makefile_roihu` | the Roihu-adapted makefile; every change from upstream is marked `# ROIHU:` |
-| `run/` (or `Run/`) | templates, the generators that fill them in, and the Slurm scripts |
-| `local_reference/` | your own namelists, logs and old binaries. Git-ignored, never pushed |
-| `README.md` | compile, prepare, submit, troubleshoot |
+**Each folder has its own `README.md`** with the full compile-and-run instructions for
+Roihu.
 
 ---
 
@@ -85,8 +71,7 @@ hard-codes a project number: pass it as `sbatch --account=project_XXXXXXX`, or e
 `WRF-FLEXPART/src/` is FLEXPART-WRF v3.3.2, copyright J. Brioude, D. Arnold, A. Stohl
 and the other FLEXPART authors named in the file headers, released under the GPLv3.
 This repository redistributes it under the same terms, along with the Roihu build and
-run scripts. Files modified at INAR carry a dated modification notice in their header,
-as GPLv3 §5(a) requires.
+run scripts.
 
 `FLEX_EXTRACT/` is a different licence: © 2014–2020 Anne Philipp, Leopold Haimberger and
 Petra Seibert under **CC-BY-4.0** (`FLEX_EXTRACT/LICENSE.md`), except the Fortran sources

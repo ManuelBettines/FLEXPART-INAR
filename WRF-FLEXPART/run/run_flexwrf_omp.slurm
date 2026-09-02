@@ -15,12 +15,12 @@
 # set SBATCH_ACCOUNT=project_XXXXXXX in your ~/.bashrc.
 #=====================================================================================
 #SBATCH --job-name=flexwrf
-#SBATCH --partition=medium
+#SBATCH --partition=small
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=64
 #SBATCH --mem=0
-#SBATCH --time=36:00:00
+#SBATCH --time=72:00:00
 #SBATCH --output=flexwrf_%j.out
 #SBATCH --error=flexwrf_%j.err
 

@@ -2,11 +2,6 @@
 #=====================================================================================
 # Run FLEXPART v11 on Roihu (CSC) — one node, OpenMP.
 #
-# There is no MPI variant, and that is not an oversight: FLEXPART v11 has no MPI code
-# at all (v10.4 did; v11 replaced it with OpenMP over the particle loop). One task,
-# many threads, one node is the only way to run it. Asking for several nodes just
-# leaves the extra ones idle.
-#
 #   1. copy this script into your case directory, next to 'pathnames'
 #   2. edit the CONFIGURATION block below (and the #SBATCH lines)
 #   3. submit, giving your CSC project:
@@ -21,8 +16,8 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=64G
-#SBATCH --time=36:00:00
+#SBATCH --mem=0
+#SBATCH --time=72:00:00
 #SBATCH --output=flexpart_%j.out
 #SBATCH --error=flexpart_%j.err
 

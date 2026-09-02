@@ -42,6 +42,79 @@ one exception is `ame_timeseries.py`, which needs the raw file — its emissions
 hour by hour, so the output steps have to still be there. Run any of them with `--help`
 for the full flag list.
 
+## Running on Roihu
+
+Do not run these on the login node — reducing a run or accumulating emissions reads
+gigabytes and takes minutes to hours. `run_analysis.slurm` submits any one of them as a
+batch job:
+
+```bash
+sbatch --account=project_XXXXXXX run_analysis.slurm <tool> [the script's own flags...]
+```
+
+The first argument picks the script; everything after it is handed to that script
+unchanged, so every flag documented below works as written:
+
+| tool | script |
+|---|---|
+| `reduce` | `reduce_output.py` |
+| `footprint` | `plot_footprint.py` |
+| `source-map` | `plot_source_map.py` |
+| `time-over` | `time_over.py` |
+| `ame` | `ame_timeseries.py` |
+| `som` | `som_regimes.py` |
+
+```bash
+sbatch --account=project_XXXXXXX run_analysis.slurm \
+    reduce flxout_d02_20220626_230000.nc -o footprints_d02.nc --chunk 100
+
+sbatch --account=project_XXXXXXX run_analysis.slurm \
+    footprint footprints_d01.nc --start 2022-05-28 --end 2022-05-29
+```
+
+Submit from the directory that holds `flxout`/`header` — relative paths and the output
+files are resolved there. If that is not `analysis_scripts/` itself, say where the
+scripts are:
+
+```bash
+sbatch --account=project_XXXXXXX \
+    --export=ALL,AS_ROOT=/projappl/project_XXXXXXX/$USER/FLEXPART/analysis_scripts \
+    /projappl/project_XXXXXXX/$USER/FLEXPART/analysis_scripts/run_analysis.slurm \
+    footprint footprints_d01.nc
+```
+
+The defaults are 8 cores, 32 GB and 4 hours, which suits a reduction or a plot; give a
+long `ame` over a raw `flxout` more of both on the command line:
+
+```bash
+sbatch --account=project_XXXXXXX --time=12:00:00 --mem=64G run_analysis.slurm \
+    ame flxout_d01_20230430_230000.nc --emis EMISSION_MILAN.nc --var MONOT NOx SO2_a \
+    --hours 72 -o AME_Milan.csv
+```
+
+The environment comes from the `python-data` module. `som_regimes.py` also needs
+`minisom` and `scikit-learn`, which are not in it:
+
+```bash
+module load python-data
+python3 -m venv --system-site-packages $HOME/fp_analysis_venv
+source $HOME/fp_analysis_venv/bin/activate
+pip install minisom scikit-learn
+```
+
+then submit with `--export=ALL,AS_VENV=$HOME/fp_analysis_venv`. The job checks every
+import it needs before it starts work and names anything missing. It also checks the
+Natural Earth cache the map plots draw from, and prints the one command that fills it —
+run that once on the login node, which has the network, if the warning appears.
+
+Run a tool's `--help` without queueing anything:
+
+```bash
+AS_ROOT=. bash run_analysis.slurm footprint --help
+```
+
+Logs are `fpanalysis_<jobid>.out` and `.err` in the submit directory.
+
 ## reduce_output.py
 
 ```bash

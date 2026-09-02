@@ -1,4 +1,4 @@
-# flex_extract 7.1.3 on Roihu (CSC)
+# flex_extract 7.1.3 on Roihu 
 
 Setup-and-run guide for **flex_extract**, which retrieves meteorological fields from
 ECMWF and converts them into the GRIB files **FLEXPART v11** reads. It is a
@@ -41,8 +41,7 @@ FLEX_EXTRACT/
 │   ├── Python/            the retrieval and conversion driver
 │   └── Fortran/           calc_etadot, and makefile_roihu
 ├── Templates/             job and namelist templates
-├── Documentation/         upstream HTML documentation
-└── local_reference/       your own CONTROL copies, logs and old runs (git-ignored)
+└── Documentation/         upstream HTML documentation
 ```
 
 The upstream Bologna and Reading scripts (`setup_*.sh`, `Run/run_bologna.sh`,
@@ -209,7 +208,11 @@ wall-time limit.
 
 Monitor with `squeue --me`; logs land in `Run/logs/`.
 
-When the retrival is done you can mode to [`FLEXPART_v11/`](../FLEXPART_v11/).
+When the retrival is done you should get the following message:
+```
+FLEX_EXTRACT IS DONE!
+```
+If so you can move to [`FLEXPART_v11/`](../FLEXPART_v11/).
 
 ---
 

@@ -22,8 +22,7 @@ WRF-FLEXPART/
 ├── examples/              Brioude's upstream example input files (see section 4.6)
 ├── run/                   templates + generators + Slurm scripts
 ├── build/                 created by the build, one dir per flavour (git-ignored)
-├── bin/                   the executables land here (git-ignored)
-└── local_reference/       your own namelists and logs (git-ignored)
+└── bin/                   the executables land here (git-ignored)
 ```
 
 ---
