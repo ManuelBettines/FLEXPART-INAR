@@ -126,8 +126,18 @@ and the cell corners), the layer tops (`ztop`) and every global attribute. It al
 `release_time` coordinate — the moment each release's air is at the receptor — which is
 what lets the other scripts select releases by date instead of by index.
 
-`--chunk` is how many output steps are held in memory at once; lower it if the run is
-short of RAM. `--species N` picks one of several species.
+`--chunk` is how many output steps are read at once. The reducer also chunks releases,
+vertical levels and the horizontal grid so that Dask does not start with one huge task;
+the defaults are deliberately conservative for Roihu. If a run still sits at `0%` for a
+long time, lower `--chunk` first, for example:
+
+```bash
+sbatch --account=project_XXXXXXX run_analysis.slurm \
+    reduce flxout_d02_20220626_230000.nc -o footprints_d02.nc --chunk 25
+```
+
+For very large domains, also lower `--spatial-chunk` from its default of 128.
+`--species N` picks one of several species.
 
 ## plot_footprint.py
 

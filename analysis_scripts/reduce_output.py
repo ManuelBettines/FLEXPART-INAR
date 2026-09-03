@@ -19,6 +19,7 @@ import xarray as xr
 
 DOMAIN_RE = re.compile(r"_d(\d+)_")
 GRID_VARS = ("XLONG", "XLAT", "XLONG_CORNER", "XLAT_CORNER")
+SPATIAL_DIMS = ("south_north", "west_east")
 
 
 def domain_of(path):
@@ -71,6 +72,38 @@ def footprints(ds, species):
     return conc.sum("Time").transpose("releases", "bottom_top", "south_north", "west_east")
 
 
+def chunk_plan(path, time_chunk, release_chunk, vertical_chunk, spatial_chunk):
+    """Small CONC blocks keep Dask progress visible and avoid huge first tasks."""
+    with xr.open_dataset(path) as probe:
+        if "CONC" not in probe:
+            raise SystemExit(f"{path} has no CONC variable: it is not a FLEXPART-WRF output file")
+        dims = tuple(probe["CONC"].dims)
+        sizes = dict(probe["CONC"].sizes)
+
+    chunks = {}
+    if "Time" in dims:
+        chunks["Time"] = min(time_chunk, sizes["Time"])
+    if "releases" in dims:
+        chunks["releases"] = min(release_chunk, sizes["releases"])
+    if "species" in dims:
+        chunks["species"] = 1
+    if "ageclass" in dims:
+        chunks["ageclass"] = 1
+    if "bottom_top" in dims:
+        chunks["bottom_top"] = min(vertical_chunk, sizes["bottom_top"])
+    for dim in SPATIAL_DIMS:
+        if dim in dims:
+            chunks[dim] = min(spatial_chunk, sizes[dim])
+    return chunks
+
+
+def output_chunks(fp, spatial_chunk):
+    return (1,
+            1,
+            min(spatial_chunk, fp.sizes["south_north"]),
+            min(spatial_chunk, fp.sizes["west_east"]))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0],
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -83,16 +116,29 @@ def main(argv=None):
                     help="which species, 0-based, if the run has several (default: 0)")
     ap.add_argument("--chunk", type=int, default=50, metavar="N",
                     help="output steps read at a time (default: 50)")
+    ap.add_argument("--release-chunk", type=int, default=1, metavar="N",
+                    help="releases read at a time (default: 1)")
+    ap.add_argument("--vertical-chunk", type=int, default=1, metavar="N",
+                    help="vertical levels read at a time (default: 1)")
+    ap.add_argument("--spatial-chunk", type=int, default=128, metavar="N",
+                    help="south_north/west_east cells read at a time (default: 128)")
     a = ap.parse_args(argv)
 
     if not os.path.exists(a.flxout):
         raise SystemExit(f"no such file: {a.flxout}")
+    for flag, value in (("--chunk", a.chunk),
+                        ("--release-chunk", a.release_chunk),
+                        ("--vertical-chunk", a.vertical_chunk),
+                        ("--spatial-chunk", a.spatial_chunk)):
+        if value < 1:
+            raise SystemExit(f"{flag} must be at least 1")
     header_path = a.header or find_header(a.flxout)
     dom = domain_of(a.flxout)
     out = a.output or os.path.join(os.path.dirname(os.path.abspath(a.flxout)),
                                    f"footprints_d{dom:02d}.nc" if dom else "footprints.nc")
 
-    ds = xr.open_dataset(a.flxout, chunks={"Time": a.chunk})
+    chunks = chunk_plan(a.flxout, a.chunk, a.release_chunk, a.vertical_chunk, a.spatial_chunk)
+    ds = xr.open_dataset(a.flxout, chunks=chunks)
     header = xr.open_dataset(header_path)
     missing = [v for v in GRID_VARS + ("ZTOP", "ReleaseTstart_end") if v not in header]
     if missing:
@@ -128,13 +174,15 @@ def main(argv=None):
           f"{fp.sizes['releases']} releases, {ds.sizes['Time']} output steps")
     print(f"  grid and release times from {os.path.basename(header_path)}")
     print(f"  releases arrive {str(times[0])[:16]} .. {str(times[-1])[:16]} UTC")
+    print(f"  input chunks {', '.join(f'{k}={v}' for k, v in chunks.items())}")
+    print(f"  uncompressed CONC is about {fp.size * np.dtype('float32').itemsize / 1e9:.1f} GB")
     print(f"  writing {out}")
 
     from dask.diagnostics import ProgressBar
     with ProgressBar():
         reduced.to_netcdf(out, format="NETCDF4", encoding={"CONC": {
             "zlib": True, "complevel": 4,
-            "chunksizes": (1, fp.sizes["bottom_top"], ny, nx)}})
+            "chunksizes": output_chunks(fp, a.spatial_chunk)}})
     print(f"wrote {out} ({os.path.getsize(out) / 1e6:.1f} MB)")
 
 
